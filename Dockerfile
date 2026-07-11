@@ -2,12 +2,14 @@
 FROM node:24-alpine AS builder
 WORKDIR /app
 
-# Use npm to avoid pnpm workspace issues
+# Use npm, prevent Next.js from auto-detecting pnpm
 COPY package.json ./
 RUN npm install
 
 COPY . .
+RUN rm -f pnpm-lock.yaml pnpm-workspace.yaml
 RUN npx prisma generate
+ENV NEXT_IGNORE_PACKAGE_MANAGER=1
 RUN npm run build
 
 # Stage 2: Production runtime
