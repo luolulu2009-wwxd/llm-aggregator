@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build
+.next/
+out/
+
+# Environment (contains API keys)
+.env
+.env.production
+.env.local
+
+# Proprietary modules (not open source)
+src/lib/keys.proprietary.ts
+src/lib/billing.proprietary.ts
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Prisma
+src/generated/
+
+# Debug
+*.log
+.pnpm-approve-builds.json
+pnpm-workspace.yaml
+.npmrc

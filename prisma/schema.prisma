@@ -1,0 +1,162 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  passwordHash   String?   // null = OAuth only
+  name           String?
+  trustLevel     String    @default("L0") // L0 | L1 | L2 | L3
+  creditBalance  Decimal   @default(0) @db.Decimal(20, 8)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  apiKeys        ApiKey[]
+  providerKeys   ProviderKey[]
+  usageLogs      UsageLog[]
+  transactions   Transaction[]
+  abuseEvents    AbuseEvent[]
+}
+
+model ApiKey {
+  id         String   @id @default(cuid())
+  userId     String
+  keyHash    String   @unique
+  name       String?
+  prefix     String   // first 4 chars shown in UI
+  rateLimit  Int      @default(1000) // requests per minute
+  isActive   Boolean  @default(true)
+  lastUsedAt DateTime?
+  createdAt  DateTime @default(now())
+  deletedAt  DateTime?
+
+  user       User     @relation(fields: [userId], references: [id])
+  usageLogs  UsageLog[]
+
+  @@index([userId])
+}
+
+model ProviderKey {
+  id               String    @id @default(cuid())
+  userId           String
+  provider         String    // "openai" | "anthropic" | "deepseek" | "qwen" | "glm" | "moonshot"
+  modelFamily      String    // "gpt-5" | "claude-sonnet-4" | "deepseek-v4" etc.
+  keyEncrypted     String    // AES-256-GCM encrypted
+  keyHash          String    @unique // hash of last 6 chars for duplicate detection
+  dailyLimit       Int       @default(1000000) // token limit per day
+  todayUsed        Int       @default(0)
+  lastResetDate    DateTime  @default(now())
+  status           String    @default("pending") // pending | active | paused | banned
+  contributedTokens Decimal  @default(0) @db.Decimal(20, 0)
+  earnedCredits    Decimal   @default(0) @db.Decimal(20, 8)
+  lastHealthCheck  DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id])
+  usageLogs  UsageLog[]
+
+  @@index([userId])
+  @@index([provider, modelFamily])
+  @@index([status])
+}
+
+model Model {
+  id              String  @id @default(cuid())
+  slug            String  @unique // "anthropic/claude-sonnet-4.6"
+  provider        String  // "anthropic"
+  name            String  // "Claude Sonnet 4.6"
+  inputPrice      Decimal @db.Decimal(20, 12)  // price per 1 token
+  outputPrice     Decimal @db.Decimal(20, 12)
+  currency        String  @default("CNY")
+  contextWindow   Int     @default(8192)
+  maxOutputTokens Int     @default(4096)
+  capabilities    String  @default("text") // "text,vision,code,tool_use"
+  status          String  @default("active") // active | inactive | deprecated
+  sortOrder       Int     @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model RouteRule {
+  id          String  @id @default(cuid())
+  intent      String  // "code" | "translate" | "summary" | "creative" | "reasoning" | "default"
+  keywords    String  // comma-separated keywords
+  targetModel String  // model slug
+  priority    Int     @default(0)
+  confidence  Decimal @default(0.8) @db.Decimal(3, 2)
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([intent])
+}
+
+model UsageLog {
+  id               String   @id @default(cuid())
+  userId           String
+  apiKeyId         String?
+  providerKeyId    String?
+  modelSlug        String
+  provider         String
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  cost             Decimal  @default(0) @db.Decimal(20, 12)
+  routeReason      String?  // "manual" | "rule:code" | "fallback:model" | "fallback:provider"
+  isStreaming      Boolean  @default(false)
+  durationMs       Int?
+  status           String   @default("success") // success | error | blocked
+  errorMessage     String?
+  createdAt        DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id])
+  apiKey      ApiKey?     @relation(fields: [apiKeyId], references: [id])
+  providerKey ProviderKey? @relation(fields: [providerKeyId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([apiKeyId])
+  @@index([providerKeyId])
+  @@index([createdAt])
+}
+
+model Transaction {
+  id           String   @id @default(cuid())
+  userId       String
+  amount       Decimal  @db.Decimal(20, 8) // positive = credit, negative = debit
+  type         String   // "topup" | "deduct" | "contribution" | "insurance_payout" | "refund"
+  description  String?
+  balanceAfter Decimal  @db.Decimal(20, 8)
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model AbuseEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  triggerType String   // "keyword" | "rate_burst" | "token_spike" | "new_user_surge"
+  severity    String   @default("warning") // warning | rate_limited | frozen
+  matchedRule String?
+  action      String   // "block" | "rate_limit" | "freeze" | "downgrade"
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model InsurancePool {
+  id        String   @id @default(cuid())
+  balance   Decimal  @default(0) @db.Decimal(20, 8)
+  updatedAt DateTime @updatedAt
+}
