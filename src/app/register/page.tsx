@@ -5,6 +5,7 @@ import { useState } from "react";
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
   const [result, setResult] = useState<{ apiKey?: string; error?: string } | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -16,7 +17,7 @@ export default function RegisterPage() {
       const res = await fetch("/api/v1/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name }),
+        body: JSON.stringify({ email, name, password }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -48,6 +49,11 @@ export default function RegisterPage() {
           <label className="block text-sm font-medium mb-1">名称 (可选)</label>
           <input type="text" value={name} onChange={(e) => setName(e.target.value)}
             className="w-full rounded-lg border px-3 py-2" placeholder="Your Name" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">密码</label>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded-lg border px-3 py-2" placeholder="设一个密码" />
         </div>
         <button type="submit" disabled={loading}
           className="w-full rounded-lg bg-zinc-900 text-white py-2.5 font-medium disabled:opacity-50">
