@@ -1,20 +1,18 @@
 # Stage 1: Build
-FROM node:24-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
-# Allow npm build scripts (blocked by default in npm 11+)
-RUN npm config set allow-scripts true
-
 COPY package.json ./
-RUN npm install
+RUN npm install --ignore-scripts
+RUN npx prisma generate --no-hints
+RUN npm rebuild
 
 COPY . .
 RUN rm -f pnpm-lock.yaml pnpm-workspace.yaml
-RUN npx prisma generate
 RUN npm run build
 
 # Stage 2: Production runtime
-FROM node:24-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
