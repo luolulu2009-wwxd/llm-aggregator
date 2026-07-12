@@ -1,22 +1,16 @@
-# Stage 1: Build
 FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package.json ./
-RUN npm install --ignore-scripts
-RUN npx prisma generate --no-hints
-RUN npm rebuild
+RUN npm install --legacy-peer-deps
 
 COPY . .
-RUN rm -f pnpm-lock.yaml pnpm-workspace.yaml
+RUN npx prisma generate
 RUN npm run build
 
-# Stage 2: Production runtime
 FROM node:22-alpine AS runner
 WORKDIR /app
-
 ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/next.config.ts ./
@@ -27,5 +21,4 @@ COPY --from=builder /app/src/generated ./src/generated
 COPY --from=builder /app/node_modules ./node_modules
 
 EXPOSE 3000
-
 CMD ["npx", "next", "start"]
