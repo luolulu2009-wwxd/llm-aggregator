@@ -4,11 +4,18 @@ import type { Adapter, StandardRequest, StandardResponse } from "./types";
  * Base adapter for any provider with an OpenAI-compatible API.
  * DeepSeek, Qwen, GLM, Moonshot, etc. all use an OpenAI-compatible format.
  */
+import { ProxyAgent } from "undici";
+
 export function createOpenAICompatibleAdapter(
   provider: string,
   baseUrl: string,
   defaultModel: string,
+  proxyUrl?: string,
 ): Adapter {
+  const dispatcher = proxyUrl
+    ? new ProxyAgent({ uri: proxyUrl, requestTls: { rejectUnauthorized: false } })
+    : undefined;
+
   return {
     provider,
 
@@ -28,6 +35,7 @@ export function createOpenAICompatibleAdapter(
           stop: req.stop,
           stream: req.stream ?? false,
         },
+        dispatcher,
       };
     },
 

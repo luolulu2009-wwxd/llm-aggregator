@@ -14,7 +14,9 @@ register(createOpenAICompatibleAdapter("deepseek", "https://api.deepseek.com/v1"
 register(createOpenAICompatibleAdapter("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus"));
 register(createOpenAICompatibleAdapter("glm", "https://open.bigmodel.cn/api/paas/v4", "glm-4-flash"));
 register(createOpenAICompatibleAdapter("moonshot", "https://api.moonshot.cn/v1", "moonshot-v1-8k"));
-register(createOpenAICompatibleAdapter("openai", "https://api.openai.com/v1", "gpt-4o"));
+// OpenAI needs proxy (geo-blocked from HK, same as Anthropic)
+const externalProxy = process.env.ANTHROPIC_PROXY || undefined;
+register(createOpenAICompatibleAdapter("openai", "https://api.openai.com/v1", "gpt-4o", externalProxy));
 
 // Anthropic uses a different native format
 register(anthropicAdapter);
