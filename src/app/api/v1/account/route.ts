@@ -1,22 +1,43 @@
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { validateApiKey } from "@/lib/auth";
+import { jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma";
 
-// GET /api/v1/account/balance — check balance
-export async function GET(req: NextRequest) {
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.KEY_ENCRYPTION_SECRET || "dev-secret-change-in-production-00000000000000000000000000000000"
+);
+
+async function getUserId(req: NextRequest): Promise<string | null> {
+  // Try API key first
   const auth = await validateApiKey(req.headers.get("authorization"));
-  if (!auth) {
-    return Response.json({ error: { message: "Unauthorized", type: "authentication_error", code: 401 } }, { status: 401 });
+  if (auth) return auth.userId;
+
+  // Try cookie auth
+  const token = req.cookies.get("auth_token")?.value;
+  if (token) {
+    try {
+      const { payload } = await jwtVerify(token, JWT_SECRET);
+      return payload.userId as string;
+    } catch {}
+  }
+  return null;
+}
+
+// GET /api/v1/account — check balance and usage
+export async function GET(req: NextRequest) {
+  const userId = await getUserId(req);
+  if (!userId) {
+    return Response.json({ error: { message: "请先登录或提供 API Key", type: "authentication_error", code: 401 } }, { status: 401 });
   }
 
   const user = await prisma.user.findUnique({
-    where: { id: auth.userId },
+    where: { id: userId },
     select: { creditBalance: true, trustLevel: true },
   });
 
   if (!user) {
-    return Response.json({ error: { message: "User not found", type: "not_found", code: 404 } }, { status: 404 });
+    return Response.json({ error: { message: "用户不存在", type: "not_found", code: 404 } }, { status: 404 });
   }
 
   const todayStart = new Date();
@@ -24,11 +45,11 @@ export async function GET(req: NextRequest) {
 
   const [todayUsage, transactions] = await Promise.all([
     prisma.usageLog.aggregate({
-      where: { userId: auth.userId, createdAt: { gte: todayStart } },
+      where: { userId, createdAt: { gte: todayStart } },
       _sum: { promptTokens: true, completionTokens: true, cost: true },
     }),
     prisma.transaction.findMany({
-      where: { userId: auth.userId },
+      where: { userId },
       orderBy: { createdAt: "desc" },
       take: 20,
       select: { id: true, amount: true, type: true, description: true, balanceAfter: true, createdAt: true },
