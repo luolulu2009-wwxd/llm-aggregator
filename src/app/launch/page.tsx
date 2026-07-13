@@ -116,9 +116,24 @@ export default function LaunchPage() {
   const [copied, setCopied] = useState("");
 
   function copy(text: string, id: string) {
-    navigator.clipboard.writeText(text);
+    // Use both modern and legacy clipboard APIs
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+    } else {
+      fallbackCopy(text);
+    }
     setCopied(id);
     setTimeout(() => setCopied(""), 2000);
+  }
+
+  function fallbackCopy(text: string) {
+    const el = document.createElement("textarea");
+    el.value = text;
+    el.style.position = "fixed"; el.style.left = "-9999px";
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand("copy");
+    document.body.removeChild(el);
   }
 
   return (
