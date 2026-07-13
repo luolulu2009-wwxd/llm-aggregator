@@ -2,6 +2,7 @@
   "name": "llm-aggregator",
   "version": "0.1.0",
   "private": true,
+  "bin": { "llm-config": "./cli/index.js" },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
