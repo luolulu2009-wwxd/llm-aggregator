@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
   } else {
     // Auto — use rule engine
     const userMessage = body.messages?.find((m: any) => m.role === "user")?.content || "";
-    const classification = classifyPrompt(userMessage);
+    const classification = await classifyPrompt(userMessage);
     if (classification) {
       modelSlug = classification.targetModel;
       routeReason = `rule:${classification.intent}`;
