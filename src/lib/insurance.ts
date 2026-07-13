@@ -28,10 +28,10 @@ export async function fundPool(amount: number) {
 }
 
 // Configuration
-const COOLDOWN_DAYS = 7;         // Key must be active for 7 days before insured
-const MAX_PAYOUT = 10;           // Max ¥10 payout per key
+const COOLDOWN_DAYS = 3;         // Key must be active for 3 days before insured
+const MAX_PAYOUT = 50;           // Max ¥50 payout per key
 const PAYOUT_RATIO = 0.5;        // 50% of earned credits
-const KEY_UPLOAD_STAKE = 1.0;    // ¥1 stake per key, goes to insurance pool
+const KEY_UPLOAD_STAKE = 1.0;    // ¥1 stake for L0-L1 users (L2+ free)
 
 /** Deduct stake when uploading a key */
 export async function collectKeyStake(userId: string) {
