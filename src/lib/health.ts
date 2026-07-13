@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { decrypt } from "./crypto";
 import { getAdapterByProvider } from "./adapters/factory";
+import { payoutKeyBanned } from "./insurance";
 
 const PING_MESSAGE = { role: "user", content: "hi" };
 
@@ -41,10 +42,15 @@ export async function checkKeyHealth(keyId: string) {
     });
 
     if (response.status === 401 || response.status === 403) {
+      const prev = await prisma.providerKey.findUnique({ where: { id: keyId }, select: { status: true } });
       await prisma.providerKey.update({
         where: { id: keyId },
         data: { status: "banned", lastHealthCheck: new Date() },
       });
+      // Trigger insurance payout if key was previously active
+      if (prev?.status === "active") {
+        payoutKeyBanned(keyId).catch(() => {});
+      }
     } else if (response.status === 429) {
       // Rate limited — keep active but mark check time
       await prisma.providerKey.update({

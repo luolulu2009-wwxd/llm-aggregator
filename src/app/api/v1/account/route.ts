@@ -65,6 +65,7 @@ export async function GET(req: NextRequest) {
       cost: Number(todayUsage._sum.cost || 0),
     },
     transactions,
+    insurancePool: await prisma.insurancePool.findFirst({ orderBy: { updatedAt: "desc" } }).then(p => p ? Number(p.balance) : 0),
   });
 }
 
