@@ -31,7 +31,7 @@ export default function ConnectPage() {
   const [activeTool, setActiveTool] = useState("claude-code");
   const [copied, setCopied] = useState("");
 
-  const baseUrl = "http://llm.saylulu.com/api/v1";
+  const baseUrl = "https://llm.saylulu.com/api/v1";
   const key = apiKey || "sk-your-key";
   const mdl = model === "auto" ? "auto" : model;
 
