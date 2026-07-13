@@ -20,6 +20,7 @@ export default function RootLayout({
           <a href="/login" className="font-medium hover:text-zinc-500">Login</a>
           <a href="/register" className="font-medium hover:text-zinc-500">Register</a>
           <a href="/topup" className="font-medium hover:text-zinc-500">Topup</a>
+          <a href="/withdraw" className="font-medium hover:text-zinc-500">Withdraw</a>
           <a href="/dashboard" className="font-medium hover:text-zinc-500">Dashboard</a>
           <a href="/dashboard/keys" className="font-medium hover:text-zinc-500">Keys</a>
         </nav>
