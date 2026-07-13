@@ -9,6 +9,7 @@ import { checkContent } from "@/lib/safety";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { evaluateTrustLevel } from "@/lib/trust";
 import { getRedis } from "@/lib/redis";
+import { recordUsage } from "@/lib/billing";
 
 // Lazy-init Redis on first request
 let redisReady = false;
@@ -158,7 +159,7 @@ export async function POST(req: NextRequest) {
         if (retryApiKey!) {
           const retryResp = await tryCall(adapter!, effectiveModel, body, retryApiKey, isStreaming);
           if (retryResp && retryResp.ok) {
-            return isStreaming ? streamResponse(retryResp) : jsonResponse(retryResp, adapter!);
+            return isStreaming ? streamResponse(retryResp) : jsonResponse(retryResp, adapter!, auth, selectedKey?.id, effectiveModel, provider, routeReason);
           }
         }
       }
@@ -176,7 +177,7 @@ export async function POST(req: NextRequest) {
             const fbResp = await tryCall(fbAdapter, fallbackModel, body, fbApiKey, isStreaming);
             if (fbResp && fbResp.ok) {
               routeReason += " → fallback:model";
-              return isStreaming ? streamResponse(fbResp) : jsonResponse(fbResp, fbAdapter);
+              return isStreaming ? streamResponse(fbResp) : jsonResponse(fbResp, fbAdapter, auth, fbKey.id, fallbackModel, fbProvider, routeReason);
             }
           }
         }
@@ -191,7 +192,7 @@ export async function POST(req: NextRequest) {
       return streamResponse(response);
     }
 
-    return jsonResponse(response, adapter);
+    return jsonResponse(response, adapter, auth, selectedKey?.id, effectiveModel, provider, routeReason);
   } catch (err) {
     return Response.json(
       {
@@ -251,8 +252,20 @@ async function doFetch(
   return fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
 }
 
-async function jsonResponse(response: Response, adapter: ReturnType<typeof getAdapter>) {
+async function jsonResponse(response: Response, adapter: ReturnType<typeof getAdapter>, auth: { userId: string; apiKeyId: string }, keyId: string | undefined, modelSlug: string, provider: string, routeReason: string) {
   const data = await response.json();
+  const usage = adapter!.extractUsage(data);
+
+  // Record billing asynchronously (don't block response)
+  if (keyId) {
+    recordUsage({
+      userId: auth.userId, apiKeyId: auth.apiKeyId, providerKeyId: keyId,
+      modelSlug, provider,
+      promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens,
+      routeReason, isStreaming: false, durationMs: 0,
+    }).catch(() => {});
+  }
+
   const standard = adapter!.parseResponse(data);
   return Response.json(standard);
 }

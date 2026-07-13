@@ -31,3 +31,4 @@ src/generated/
 .pnpm-approve-builds.json
 pnpm-workspace.yaml
 .npmrc
+src/lib/billing.prod.ts
