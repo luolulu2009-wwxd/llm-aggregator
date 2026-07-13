@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { validateApiKey } from "@/lib/auth";
 import { jwtVerify } from "jose";
 import { uploadProviderKey, listProviderKeys } from "@/lib/keys";
+import { collectKeyStake } from "@/lib/insurance";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.KEY_ENCRYPTION_SECRET || "dev-secret-change-in-production-00000000000000000000000000000000"
@@ -26,6 +27,8 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Collect ¥1 stake for insurance pool
+    await collectKeyStake(userId);
     const key = await uploadProviderKey({ userId, provider, modelFamily: modelFamily || `${provider}-default`, keyValue, dailyLimit: dailyLimit || 1_000_000 });
     return Response.json({ id: key.id, provider: key.provider, modelFamily: key.modelFamily, status: key.status }, { status: 201 });
   } catch (err) {

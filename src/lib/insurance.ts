@@ -27,23 +27,48 @@ export async function fundPool(amount: number) {
   return prisma.insurancePool.create({ data: { balance: amount } });
 }
 
+// Configuration
+const COOLDOWN_DAYS = 7;         // Key must be active for 7 days before insured
+const MAX_PAYOUT = 10;           // Max ¥10 payout per key
+const PAYOUT_RATIO = 0.5;        // 50% of earned credits
+const KEY_UPLOAD_STAKE = 1.0;    // ¥1 stake per key, goes to insurance pool
+
+/** Deduct stake when uploading a key */
+export async function collectKeyStake(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { creditBalance: true } });
+  if (!user || Number(user.creditBalance) < KEY_UPLOAD_STAKE) {
+    throw new Error(`上传 Key 需要 ¥${KEY_UPLOAD_STAKE} 押金（进入保险池）`);
+  }
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: userId }, data: { creditBalance: { decrement: KEY_UPLOAD_STAKE } } });
+    await tx.transaction.create({
+      data: { userId, amount: -KEY_UPLOAD_STAKE, type: "deduct", description: "Key 上传押金（进入保险池）", balanceAfter: 0 },
+    });
+    await fundPool(KEY_UPLOAD_STAKE);
+  });
+}
+
 /** Payout to contributor when their key is banned */
 export async function payoutKeyBanned(keyId: string) {
-  // Get the key info
   const key = await prisma.providerKey.findUnique({
     where: { id: keyId },
-    select: { userId: true, contributedTokens: true, earnedCredits: true, status: true },
+    select: { userId: true, contributedTokens: true, earnedCredits: true, status: true, createdAt: true },
   });
   if (!key || key.status !== "banned") return null;
+
+  // Cooldown check: key must be at least COOLDOWN_DAYS old
+  const keyAge = (Date.now() - key.createdAt.getTime()) / (86400000);
+  if (keyAge < COOLDOWN_DAYS) return null;
 
   // Check if already paid out
   const existingPayout = await prisma.transaction.findFirst({
     where: { userId: key.userId, type: "insurance_payout", description: { contains: keyId } },
   });
-  if (existingPayout) return null; // already paid
+  if (existingPayout) return null;
 
-  // Calculate payout: 50% of earned credits (covers partial loss)
-  const payoutAmount = Number(key.earnedCredits) * 0.5;
+  // Calculate payout: 50% of earned credits, capped at MAX_PAYOUT
+  const rawPayout = Number(key.earnedCredits) * PAYOUT_RATIO;
+  const payoutAmount = Math.min(rawPayout, MAX_PAYOUT);
   if (payoutAmount <= 0) return null;
 
   // Get pool balance
