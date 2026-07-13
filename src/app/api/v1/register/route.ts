@@ -8,8 +8,17 @@ const JWT_SECRET = new TextEncoder().encode(
   process.env.KEY_ENCRYPTION_SECRET || "dev-secret-change-in-production-00000000000000000000000000000000"
 );
 
+import { checkRegistrationAbuse } from "@/lib/abuse";
+
 export async function POST(req: NextRequest) {
   const { email, name, password } = await req.json();
+
+  // Anti-abuse: IP rate limit
+  const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
+  const abuseCheck = await checkRegistrationAbuse(ip);
+  if (!abuseCheck.allowed) {
+    return NextResponse.json({ error: { message: abuseCheck.reason, type: "rate_limited", code: 429 } }, { status: 429 });
+  }
 
   if (!email) {
     return NextResponse.json(

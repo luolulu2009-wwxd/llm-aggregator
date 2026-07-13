@@ -10,6 +10,7 @@ import { checkRateLimit } from "@/lib/ratelimit";
 import { evaluateTrustLevel } from "@/lib/trust";
 import { getRedis } from "@/lib/redis";
 import { recordUsage } from "@/lib/billing";
+import { detectSelfDealing, checkEarningsAbuse } from "@/lib/abuse";
 
 // Lazy-init Redis on first request
 let redisReady = false;
