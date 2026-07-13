@@ -43,17 +43,29 @@ export async function detectSelfDealing(
   return false;
 }
 
-// === 3. Abnormal earnings detection ===
-export async function checkEarningsAbuse(keyId: string, newReward: number): Promise<boolean> {
+// === 3. Velocity anomaly detection ===
+// Flag if a key's daily earnings spike >10x the 3-day average
+export async function checkEarningsAnomaly(keyId: string, newReward: number): Promise<boolean> {
   const redis = getRedisSync();
   if (!redis) return false;
 
-  const dailyKey = `earnings:${keyId}:${new Date().toISOString().slice(0, 10)}`;
+  const today = new Date().toISOString().slice(0, 10);
+  const dailyKey = `earnings:${keyId}:${today}`;
   const todayEarnings = await redis.incrbyfloat(dailyKey, newReward);
   await redis.expire(dailyKey, 86400);
 
-  // Flag if daily earnings exceed ¥5 for an L0-L1 user's key
-  if (todayEarnings > 5) {
+  // Get 3-day average for comparison
+  let avgEarnings = 0;
+  for (let i = 1; i <= 3; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const pastKey = `earnings:${keyId}:${d.toISOString().slice(0, 10)}`;
+    const pastVal = await redis.get(pastKey);
+    avgEarnings += pastVal ? Number(pastVal) : 0;
+  }
+  avgEarnings = avgEarnings / 3;
+
+  // Flag if today exceeds 10x the 3-day average AND today is above ¥1
+  if (avgEarnings > 0 && todayEarnings > avgEarnings * 10 && todayEarnings > 1) {
     const key = await prisma.providerKey.findUnique({
       where: { id: keyId },
       select: { userId: true },
@@ -63,9 +75,21 @@ export async function checkEarningsAbuse(keyId: string, newReward: number): Prom
         where: { id: key.userId },
         select: { trustLevel: true },
       });
-      if (user && (user.trustLevel === "L0" || user.trustLevel === "L1")) {
-        return true; // flag for review
+      // Auto-flag for review, only auto-freeze L0 users with extreme spikes (>50x)
+      if (todayEarnings > avgEarnings * 50 && user?.trustLevel === "L0") {
+        await freezeUser(key.userId, `收益异常：今日 ¥${todayEarnings.toFixed(2)}，3日均 ¥${avgEarnings.toFixed(2)}`);
+        return true;
       }
+      // Log for review
+      await prisma.abuseEvent.create({
+        data: {
+          userId: key.userId,
+          triggerType: "earnings_anomaly",
+          severity: "warning",
+          action: "flag",
+          matchedRule: `Key ${keyId}: today ¥${todayEarnings.toFixed(2)} vs 3d avg ¥${avgEarnings.toFixed(2)}`,
+        },
+      });
     }
   }
   return false;
