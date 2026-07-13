@@ -9,112 +9,145 @@ interface AccountData {
   todayUsage: { promptTokens: number; completionTokens: number; cost: number };
   transactions: { id: string; amount: number; type: string; description: string; createdAt: string }[];
 }
+interface StatsData {
+  days: { date: string; tokens: number; cost: number }[];
+  models: { slug: string; cost: number; tokens: number }[];
+  totalEarned: number;
+}
 
 export default function DashboardPage() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [data, setData] = useState<AccountData | null>(null);
+  const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     fetch("/api/v1/auth/me").then(r => r.json()).then(d => {
-      if (d.email) {
-        setUser(d);
-        loadApiKey();
-      } else {
-        setLoading(false);
-      }
+      if (d.email) { setUser(d); loadData(); }
+      else setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
 
-  async function loadApiKey() {
+  async function loadData() {
     try {
-      const res = await fetch("/api/v1/auth/keys");
-      const d = await res.json();
-      if (d.apiKey) {
-        setApiKey(d.apiKey);
-        loadAccount(d.apiKey);
-      }
-    } catch { setLoading(false); }
-  }
-
-  async function loadAccount(key: string) {
-    try {
-      const res = await fetch("/api/v1/account", { headers: { Authorization: `Bearer ${key}` } });
-      if (res.ok) setData(await res.json());
+      const [accRes, statsRes] = await Promise.all([
+        fetch("/api/v1/account"),
+        fetch("/api/v1/account/stats"),
+      ]);
+      if (accRes.ok) setData(await accRes.json());
+      if (statsRes.ok) setStats(await statsRes.json());
     } catch {}
     setLoading(false);
   }
 
-  // Manual API key mode
-  async function fetchWithKey() {
-    setLoading(true); setError("");
+  async function manualFetch() {
+    setLoading(true);
     try {
-      const res = await fetch("/api/v1/account", { headers: { Authorization: `Bearer ${apiKey}` } });
-      if (!res.ok) throw new Error("API Key 无效");
-      setData(await res.json());
-      setUser({ email: "API Key 用户", name: "", creditBalance: 0, trustLevel: "-" });
-    } catch (e: any) { setError(e.message); }
+      const [accRes] = await Promise.all([
+        fetch("/api/v1/account", { headers: { Authorization: `Bearer ${apiKey}` } }),
+        fetch("/api/v1/account/stats", { headers: { Authorization: `Bearer ${apiKey}` } }),
+      ]);
+      if (accRes.ok) setData(await accRes.json());
+    } catch {}
     setLoading(false);
   }
 
   return (
-    <main className="max-w-4xl mx-auto p-6 space-y-6">
+    <main className="max-w-5xl mx-auto p-6 space-y-6">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Dashboard</h1>
-          {user && <p className="text-sm text-zinc-500">{user.email} · {user.trustLevel}</p>}
+          {user && <p className="text-sm text-zinc-500">{user.email}</p>}
         </div>
-        {user && <Link href="/dashboard/keys" className="text-sm text-blue-600 hover:underline">管理 Key →</Link>}
+        <div className="flex gap-2">
+          <Link href="/docs" className="text-xs text-blue-600 hover:underline">API 文档</Link>
+          <Link href="/dashboard/keys" className="text-xs text-blue-600 hover:underline">管理 Key</Link>
+        </div>
       </header>
 
       {!user && (
-        <div className="bg-white dark:bg-zinc-900 border rounded-xl p-6 space-y-3">
-          <p className="text-sm font-medium">输入 API Key 查看 Dashboard</p>
+        <div className="bg-zinc-50 border rounded-xl p-6 space-y-3">
+          <p className="font-medium">输入 API Key 查看 Dashboard</p>
           <div className="flex gap-2">
             <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
               placeholder="sk-..." className="flex-1 rounded-lg border px-3 py-2 font-mono text-sm" />
-            <button onClick={fetchWithKey} disabled={loading}
-              className="rounded-lg bg-zinc-900 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">
-              查询
-            </button>
+            <button onClick={manualFetch} className="rounded-lg bg-zinc-900 text-white px-4 py-2 text-sm font-medium">查询</button>
           </div>
-          <p className="text-xs text-zinc-400">
-            <Link href="/login" className="hover:underline">登录</Link> 后自动显示，无需手动输入
-          </p>
-          {error && <p className="text-red-500 text-sm">{error}</p>}
+          <p className="text-xs text-zinc-400"><Link href="/login" className="hover:underline">登录</Link> 后自动显示</p>
         </div>
       )}
 
       {data && (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* Balance Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <Card label="余额" value={`¥${data.balance.toFixed(4)}`} />
-            <Card label="等级" value={data.trustLevel} />
+            <Card label="贡献收益" value={stats ? `¥${stats.totalEarned.toFixed(4)}` : "-"} highlight />
             <Card label="今日 Token" value={`${((data.todayUsage.promptTokens + data.todayUsage.completionTokens) / 1000).toFixed(0)}K`} />
-            <Card label="今日费用" value={`¥${data.todayUsage.cost.toFixed(4)}`} />
+            <Card label="今日费用" value={`¥${data.todayUsage.cost.toFixed(6)}`} />
+            <Card label="等级" value={data.trustLevel} />
           </div>
 
+          {/* 7-day trend */}
+          {stats && stats.days.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold mb-3">7 天用量趋势</h2>
+              <div className="bg-white dark:bg-zinc-900 border rounded-xl p-4">
+                <div className="flex items-end gap-2 h-32">
+                  {stats.days.map((d, i) => {
+                    const maxTokens = Math.max(...stats.days.map(x => x.tokens), 1);
+                    const height = Math.max(4, (d.tokens / maxTokens) * 100);
+                    return (
+                      <div key={i} className="flex-1 flex flex-col items-center gap-1" title={`${d.date}: ${(d.tokens / 1000).toFixed(0)}K tokens, ¥${d.cost.toFixed(4)}`}>
+                        <span className="text-[10px] text-zinc-400">{d.cost > 0 ? `¥${d.cost.toFixed(2)}` : ""}</span>
+                        <div className="w-full bg-blue-500 rounded-t" style={{ height: `${height}%` }} />
+                        <span className="text-[10px] text-zinc-400">{d.date}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* Model distribution */}
+          {stats && stats.models.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold mb-3">模型使用分布</h2>
+              <div className="bg-white dark:bg-zinc-900 border rounded-xl p-4 space-y-2">
+                {stats.models.map(m => {
+                  const totalCost = stats.models.reduce((s, x) => s + x.cost, 0) || 1;
+                  const pct = (m.cost / totalCost) * 100;
+                  return (
+                    <div key={m.slug} className="flex items-center gap-3 text-sm">
+                      <span className="w-36 font-mono text-xs truncate">{m.slug}</span>
+                      <div className="flex-1 bg-zinc-100 dark:bg-zinc-800 rounded-full h-4 overflow-hidden">
+                        <div className="bg-green-500 h-full rounded-full" style={{ width: `${Math.max(pct, 2)}%` }} />
+                      </div>
+                      <span className="w-20 text-right text-xs text-zinc-500">{pct.toFixed(0)}% · ¥{m.cost.toFixed(2)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Transactions */}
           <section>
             <h2 className="text-lg font-semibold mb-3">最近交易</h2>
             <div className="bg-white dark:bg-zinc-900 border rounded-xl overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-zinc-50 dark:bg-zinc-800 text-zinc-500">
-                  <tr>
-                    <th className="text-left px-4 py-2">类型</th>
-                    <th className="text-right px-4 py-2">金额</th>
-                    <th className="text-left px-4 py-2">说明</th>
-                    <th className="text-right px-4 py-2">时间</th>
-                  </tr>
+                  <tr><th className="text-left px-4 py-2">类型</th><th className="text-right px-4 py-2">金额</th><th className="text-left px-4 py-2">说明</th><th className="text-right px-4 py-2">时间</th></tr>
                 </thead>
                 <tbody>
-                  {data.transactions.slice(0, 15).map(tx => (
-                    <tr key={tx.id} className="border-t border-zinc-100 dark:border-zinc-800">
+                  {data.transactions.slice(0, 10).map(tx => (
+                    <tr key={tx.id} className="border-t">
                       <td className="px-4 py-2"><TxBadge type={tx.type} /></td>
                       <td className={`px-4 py-2 text-right font-mono text-xs ${Number(tx.amount) >= 0 ? "text-green-600" : "text-red-500"}`}>
-                        {Number(tx.amount) >= 0 ? "+" : ""}{Number(tx.amount).toFixed(4)}
-                      </td>
+                        {Number(tx.amount) >= 0 ? "+" : ""}{Number(tx.amount).toFixed(6)}</td>
                       <td className="px-4 py-2 text-zinc-500 text-xs">{tx.description || "-"}</td>
                       <td className="px-4 py-2 text-right text-zinc-400 text-xs">{new Date(tx.createdAt).toLocaleString("zh-CN")}</td>
                     </tr>
@@ -129,8 +162,8 @@ export default function DashboardPage() {
   );
 }
 
-function Card({ label, value }: { label: string; value: string }) {
-  return <div className="bg-white dark:bg-zinc-900 border rounded-xl p-4">
+function Card({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return <div className={`rounded-xl p-4 border ${highlight ? "bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800" : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800"}`}>
     <p className="text-xs text-zinc-500 mb-1">{label}</p>
     <p className="text-xl font-bold font-mono">{value}</p>
   </div>;

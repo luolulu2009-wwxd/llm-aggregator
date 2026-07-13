@@ -37,3 +37,6 @@ export function getAdapterByProvider(provider: string): Adapter | null {
 export function listAdapters(): string[] {
   return Array.from(adapters.keys());
 }
+
+// Doubao (ByteDance) — OpenAI-compatible
+register(createOpenAICompatibleAdapter("doubao", "https://ark.cn-beijing.volces.com/api/v3", "doubao-pro-32k"));
