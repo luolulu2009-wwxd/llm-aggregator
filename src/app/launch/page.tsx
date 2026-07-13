@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+// eslint-disable-next-line
 
 const PLATFORMS = [
   {
@@ -113,28 +113,6 @@ Built with Next.js 16 + Prisma + PostgreSQL. Looking for feedback and contributo
 ];
 
 export default function LaunchPage() {
-  const [copied, setCopied] = useState("");
-
-  function copy(text: string, id: string) {
-    // Use both modern and legacy clipboard APIs
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
-    } else {
-      fallbackCopy(text);
-    }
-    setCopied(id);
-    setTimeout(() => setCopied(""), 2000);
-  }
-
-  function fallbackCopy(text: string) {
-    const el = document.createElement("textarea");
-    el.value = text;
-    el.style.position = "fixed"; el.style.left = "-9999px";
-    document.body.appendChild(el);
-    el.select();
-    document.execCommand("copy");
-    document.body.removeChild(el);
-  }
 
   return (
     <main className="max-w-4xl mx-auto p-6 space-y-6">
@@ -152,14 +130,7 @@ export default function LaunchPage() {
                 打开发布页 ↗
               </a>
             </div>
-            <button
-              onClick={() => copy(p.title ? `**${p.title}**\n\n${p.content}` : p.content, p.id)}
-              className={`text-sm px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                copied === p.id ? "bg-green-100 text-green-700" : "bg-zinc-900 text-white"
-              }`}
-            >
-              {copied === p.id ? "✓ 已复制" : "📋 复制内容"}
-            </button>
+            <span className="text-xs text-zinc-400">Cmd+A → Cmd+C 复制</span>
           </div>
 
           {/* Title */}
@@ -170,10 +141,9 @@ export default function LaunchPage() {
             </p>
           )}
 
-          {/* Content preview */}
-          <pre className="bg-zinc-50 dark:bg-zinc-950 border rounded-lg p-4 text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap max-h-48 overflow-y-auto">
-            {p.content.slice(0, 300)}{p.content.length > 300 ? "..." : ""}
-          </pre>
+          {/* Content — selectable for manual copy (Cmd+A, Cmd+C) */}
+          <textarea readOnly value={p.title ? `${p.title}\n\n${p.content}` : p.content}
+            className="w-full bg-zinc-50 dark:bg-zinc-950 border rounded-lg p-4 text-xs text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap h-48 resize-y font-sans" />
         </div>
       ))}
 
