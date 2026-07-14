@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -22,11 +24,13 @@ export default function RegisterPage() {
       const data = await res.json();
       if (res.ok) {
         setResult({ apiKey: data.apiKey });
+        // Auto-redirect to dashboard after 2s
+        setTimeout(() => router.push("/dashboard"), 2000);
       } else {
-        setResult({ error: data.error?.message || "Registration failed" });
+        setResult({ error: data.error?.message || "注册失败" });
       }
     } catch {
-      setResult({ error: "Network error" });
+      setResult({ error: "网络错误" });
     } finally {
       setLoading(false);
     }
@@ -63,11 +67,14 @@ export default function RegisterPage() {
 
       {result?.apiKey && (
         <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-xl p-4 space-y-2">
-          <p className="text-green-700 dark:text-green-300 font-medium">注册成功！</p>
+          <p className="text-green-700 dark:text-green-300 font-medium">注册成功！正在跳转...</p>
           <p className="text-xs text-zinc-500">你的 API Key (仅显示一次，请妥善保存):</p>
           <code className="block bg-white dark:bg-zinc-900 rounded px-3 py-2 text-sm font-mono break-all border">
             {result.apiKey}
           </code>
+          <a href="/dashboard" className="block text-center text-sm text-blue-600 hover:underline mt-2">
+            立即进入 Dashboard →
+          </a>
         </div>
       )}
 
