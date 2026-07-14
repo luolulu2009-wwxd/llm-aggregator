@@ -36,6 +36,28 @@ export default function RegisterPage() {
     }
   }
 
+  if (result?.apiKey) {
+    // Show only success screen, no form
+    return (
+      <main className="max-w-md mx-auto p-6 pt-20">
+        <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-xl p-6 space-y-3 text-center">
+          <p className="text-2xl">🎉</p>
+          <p className="text-green-700 dark:text-green-300 font-bold text-lg">注册成功！</p>
+          <p className="text-xs text-zinc-500">API Key (请立即复制保存，仅显示一次):</p>
+          <code className="block bg-white dark:bg-zinc-900 rounded px-3 py-2 text-sm font-mono break-all border select-all cursor-pointer"
+            onClick={() => navigator.clipboard.writeText(result.apiKey!)}>
+            {result.apiKey}
+          </code>
+          <p className="text-xs text-blue-600">👆 点击复制</p>
+          <a href="/login" className="block w-full rounded-lg bg-zinc-900 text-white py-3 font-medium text-sm mt-4">
+            去登录 →
+          </a>
+          <p className="text-xs text-zinc-400">已自动登录，2 秒后跳转...</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="max-w-md mx-auto p-6 pt-20 space-y-6">
       <div className="text-center">
@@ -64,19 +86,6 @@ export default function RegisterPage() {
           {loading ? "注册中..." : "注册"}
         </button>
       </form>
-
-      {result?.apiKey && (
-        <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-xl p-4 space-y-2">
-          <p className="text-green-700 dark:text-green-300 font-medium">注册成功！正在跳转...</p>
-          <p className="text-xs text-zinc-500">你的 API Key (仅显示一次，请妥善保存):</p>
-          <code className="block bg-white dark:bg-zinc-900 rounded px-3 py-2 text-sm font-mono break-all border">
-            {result.apiKey}
-          </code>
-          <a href="/dashboard" className="block text-center text-sm text-blue-600 hover:underline mt-2">
-            立即进入 Dashboard →
-          </a>
-        </div>
-      )}
 
       {result?.error && (
         <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-xl p-4">
