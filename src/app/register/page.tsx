@@ -10,8 +10,7 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleRegister(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleRegister() {
     setLoading(true);
     setError("");
     try {
@@ -63,10 +62,10 @@ export default function RegisterPage() {
         <p className="text-zinc-500 mt-1">注册后获得 API Key</p>
       </div>
 
-      <form onSubmit={handleRegister} className="space-y-4">
+      <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium mb-1">邮箱</label>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)}
             className="w-full rounded-lg border px-3 py-2" placeholder="you@example.com" />
         </div>
         <div>
@@ -79,11 +78,11 @@ export default function RegisterPage() {
           <input type="password" value={password} onChange={e => setPassword(e.target.value)}
             className="w-full rounded-lg border px-3 py-2" placeholder="设一个密码" />
         </div>
-        <button type="submit" disabled={loading}
+        <button onClick={handleRegister} disabled={loading}
           className="w-full rounded-lg bg-zinc-900 text-white py-2.5 font-medium disabled:opacity-50">
           {loading ? "注册中..." : "注册"}
         </button>
-      </form>
+      </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600">{error}</div>

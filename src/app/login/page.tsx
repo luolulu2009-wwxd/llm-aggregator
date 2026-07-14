@@ -10,8 +10,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleLogin() {
     setLoading(true);
     setError("");
     try {
@@ -40,7 +39,7 @@ export default function LoginPage() {
         <p className="text-zinc-500 mt-1">LLM 聚合站</p>
       </div>
 
-      <form onSubmit={handleLogin} className="space-y-4">
+      <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium mb-1">邮箱</label>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
@@ -51,11 +50,11 @@ export default function LoginPage() {
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
             className="w-full rounded-lg border px-3 py-2" />
         </div>
-        <button type="submit" disabled={loading}
+        <button onClick={handleLogin} disabled={loading}
           className="w-full rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 py-2.5 font-medium disabled:opacity-50">
           {loading ? "登录中..." : "登录"}
         </button>
-      </form>
+      </div>
 
       {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600">{error}</div>}
 
