@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>提现 — LLM Aggregator</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#fafafa;min-height:100vh}
+nav{background:white;border-bottom:1px solid #eee;padding:12px 24px;display:flex;gap:16px;font-size:14px}
+nav a{color:#333;text-decoration:none}
+.container{max-width:500px;margin:0 auto;padding:24px}
+.card{background:white;border-radius:12px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+h1{font-size:22px;margin-bottom:16px}
+input{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;margin:8px 0;font-size:14px}
+.btn{width:100%;padding:12px;background:#111;color:white;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer}
+.msg{padding:10px;border-radius:8px;margin-top:8px;font-size:14px}
+.success{background:#f0fdf4;border:1px solid #86efac;color:#166534}
+.error{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b}
+</style></head>
+<body>
+<nav><a href="/">Home</a><a href="/dashboard.html">Dashboard</a><a href="/connect.html">Connect</a></nav>
+<div class="container">
+  <div class="card">
+    <h1>💸 USDT 提现</h1>
+    <p style="color:#666;font-size:14px;margin-bottom:16px">TRC20 · 2% 手续费 · 24h 内到账</p>
+    <input type="number" id="amount" placeholder="提现金额 (USDT)">
+    <input type="text" id="address" placeholder="USDT 收款地址 (TRC20)">
+    <button class="btn" onclick="doWithdraw()">提交提现申请</button>
+    <div id="msg"></div>
+  </div>
+</div>
+<script>
+async function doWithdraw() {
+  var amount = document.getElementById('amount').value;
+  var address = document.getElementById('address').value;
+  var msg = document.getElementById('msg');
+  if (!amount || !address) { msg.innerHTML='<div class="msg error">请填写金额和地址</div>'; return; }
+  msg.innerHTML = '';
+  try {
+    var res = await fetch('/api/v1/withdraw', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({amount:parseFloat(amount), usdtAddress:address, network:'TRC20'})
+    });
+    var data = await res.json();
+    if (res.ok) {
+      msg.innerHTML='<div class="msg success">'+data.message+'</div>';
+    } else {
+      msg.innerHTML='<div class="msg error">'+(data.error?.message||'提交失败')+'</div>';
+    }
+  } catch(e) { msg.innerHTML='<div class="msg error">网络错误</div>'; }
+}
+</script>
+</body></html>
