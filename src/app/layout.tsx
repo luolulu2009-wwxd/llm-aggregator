@@ -14,16 +14,14 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
-        <nav className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-3 flex gap-4 text-sm">
-          <a href="/" className="font-medium hover:text-zinc-500">Home</a>
-          <a href="/connect" className="font-medium hover:text-zinc-500">Connect</a>
+        <nav className="border-b border-zinc-200 dark:border-zinc-800 px-6 py-3 flex gap-4 text-sm items-center">
+          <a href="/" className="font-bold hover:text-zinc-500">LLM Aggregator</a>
           <a href="/docs" className="font-medium hover:text-zinc-500">API</a>
-          <a href="/login" className="font-medium hover:text-zinc-500">Login</a>
-          <a href="/register" className="font-medium hover:text-zinc-500">Register</a>
-          <a href="/topup" className="font-medium hover:text-zinc-500">Topup</a>
-          <a href="/withdraw" className="font-medium hover:text-zinc-500">Withdraw</a>
-          <a href="/dashboard" className="font-medium hover:text-zinc-500">Dashboard</a>
-          <a href="/dashboard/keys" className="font-medium hover:text-zinc-500">Keys</a>
+          <a href="/connect" className="font-medium hover:text-zinc-500">Connect</a>
+          <div className="ml-auto flex gap-4">
+            <a href="/login" className="font-medium hover:text-zinc-500">Login</a>
+            <a href="/register" className="rounded-lg bg-zinc-900 text-white px-3 py-1 text-xs font-medium hover:bg-zinc-700">Register</a>
+          </div>
         </nav>
         {children}
       </body>
