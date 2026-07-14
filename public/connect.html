@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>接入工具 — LLM Aggregator</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#fafafa;min-height:100vh}
+nav{background:white;border-bottom:1px solid #eee;padding:12px 24px;display:flex;gap:16px;font-size:14px}
+nav a{color:#333;text-decoration:none}
+.container{max-width:720px;margin:0 auto;padding:24px}
+.card{background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+h2{font-size:18px;margin-bottom:12px}
+pre{background:#1a1a2e;color:#4ade80;padding:16px;border-radius:10px;overflow-x:auto;font-size:13px;line-height:1.6;position:relative}
+.copy{position:absolute;top:8px;right:8px;background:#333;color:white;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px}
+.copy:hover{background:#555}
+input,select{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;margin-bottom:8px}
+.label{font-size:13px;color:#666;margin-bottom:4px;display:block}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.full{grid-column:1/-1}
+.tool{display:inline-block;padding:6px 14px;border:1px solid #ddd;border-radius:8px;font-size:13px;margin:2px;cursor:pointer;background:white}
+.tool.active{background:#111;color:white;border-color:#111}
+.tip{font-size:12px;color:#999;margin-top:8px}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/">Home</a>
+  <a href="/dashboard.html">Dashboard</a>
+  <a href="/connect.html">接入工具</a>
+  <a href="/docs">API</a>
+</nav>
+<div class="container">
+  <div class="card">
+    <h2>🔌 接入任何 OpenAI 兼容工具</h2>
+    <p style="color:#666;font-size:14px;margin-bottom:16px">三步配置，一个 Key 调所有模型</p>
+    
+    <div class="grid">
+      <div>
+        <label class="label">你的 API Key</label>
+        <input type="text" id="apikey" placeholder="注册时获取的 Key" oninput="updateConfig()">
+      </div>
+      <div>
+        <label class="label">模型</label>
+        <select id="model" onchange="updateConfig()">
+          <option value="auto">auto — 智能切换</option>
+          <option value="deepseek/deepseek-chat">DeepSeek Chat</option>
+          <option value="anthropic/claude-sonnet-5">Claude Sonnet 5</option>
+          <option value="openai/gpt-4o">GPT-4o</option>
+          <option value="qwen/qwen-plus">Qwen Plus</option>
+          <option value="glm/glm-4-flash">GLM-4 Flash</option>
+          <option value="doubao/ep-20260713152918-q8zxn">Doubao</option>
+        </select>
+      </div>
+    </div>
+
+    <p class="label" style="margin-top:12px">选择工具：</p>
+    <div id="tools">
+      <span class="tool active" onclick="selectTool('claude-code', this)">Claude Code</span>
+      <span class="tool" onclick="selectTool('cursor', this)">Cursor</span>
+      <span class="tool" onclick="selectTool('windsurf', this)">Windsurf</span>
+      <span class="tool" onclick="selectTool('cline', this)">Cline (VSCode)</span>
+      <span class="tool" onclick="selectTool('aider', this)">Aider</span>
+      <span class="tool" onclick="selectTool('curl', this)">cURL</span>
+    </div>
+
+    <div style="margin-top:16px;position:relative" id="configArea">
+      <pre id="configText">输入 API Key 后自动生成配置</pre>
+      <button class="copy" id="copyBtn" onclick="copyConfig()">📋 复制</button>
+    </div>
+    <p class="tip" id="copyMsg"></p>
+  </div>
+
+  <div class="card" style="background:#eff6ff;border:1px solid #bfdbfe">
+    <h2 style="color:#1e40af">🤖 model:"auto" 智能路由</h2>
+    <p style="color:#1e40af;font-size:14px">不指定模型时自动选择：代码→DeepSeek/Claude · 翻译→DeepSeek · 推理→Claude · 创作→Qwen</p>
+  </div>
+</div>
+
+<script>
+var currentTool = 'claude-code';
+var configs = {
+  'claude-code': { file: '~/.claude/settings.json', format: function(k,m){return '{\n  "apiKey": "'+k+'",\n  "baseUrl": "https://llm.saylulu.com/api/v1",\n  "model": "'+m+'"\n}';} },
+  'cursor': { file: 'Cursor Settings → Models', format: function(k,m){return '{\n  "openai.apiKey": "'+k+'",\n  "openai.baseUrl": "https://llm.saylulu.com/api/v1",\n  "model": "'+m+'"\n}';} },
+  'windsurf': { file: 'Windsurf Settings', format: function(k,m){return 'API Key: '+k+'\nBase URL: https://llm.saylulu.com/api/v1\nModel: '+m;} },
+  'cline': { file: 'VSCode Cline', format: function(k,m){return 'API Key: '+k+'\nBase URL: https://llm.saylulu.com/api/v1\nModel: '+m;} },
+  'aider': { file: 'Terminal', format: function(k,m){return 'export OPENAI_API_BASE="https://llm.saylulu.com/api/v1"\nexport OPENAI_API_KEY="'+k+'"\naider --model openai/'+m;} },
+  'curl': { file: 'Terminal', format: function(k,m){return 'curl -X POST https://llm.saylulu.com/api/v1/chat/completions \\\n  -H "Authorization: Bearer '+k+'" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"'+m+'","messages":[{"role":"user","content":"写一个快排"}]}\'';} }
+};
+
+function selectTool(tool, el) {
+  currentTool = tool;
+  document.querySelectorAll('.tool').forEach(function(t){ t.classList.remove('active'); });
+  el.classList.add('active');
+  updateConfig();
+}
+
+function updateConfig() {
+  var key = document.getElementById('apikey').value || 'YOUR_KEY';
+  var model = document.getElementById('model').value;
+  var cfg = configs[currentTool];
+  document.getElementById('configText').textContent = '# ' + cfg.file + '\n\n' + cfg.format(key, model);
+}
+
+function copyConfig() {
+  var text = document.getElementById('configText').textContent;
+  navigator.clipboard.writeText(text).then(function(){
+    document.getElementById('copyMsg').textContent = '已复制 ✅';
+    setTimeout(function(){ document.getElementById('copyMsg').textContent = ''; }, 2000);
+  });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — LLM Aggregator</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#fafafa;min-height:100vh}
+nav{background:white;border-bottom:1px solid #eee;padding:12px 24px;display:flex;gap:16px;font-size:14px}
+nav a{color:#333;text-decoration:none}
+.container{max-width:720px;margin:0 auto;padding:24px}
+.card{background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+h2{font-size:18px;margin-bottom:12px}
+.stat{display:inline-block;text-align:center;padding:16px 24px;background:#f9fafb;border-radius:10px;margin:4px}
+.stat .num{font-size:24px;font-weight:700}
+.stat .lbl{font-size:12px;color:#666;margin-top:4px}
+.btn{display:inline-block;padding:10px 20px;background:#111;color:white;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;cursor:pointer;border:none}
+.btn-sm{padding:6px 14px;font-size:12px;background:#333;color:white;border:none;border-radius:6px;cursor:pointer}
+.key-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px}
+.new-key-box{background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:12px;margin-top:8px;display:none}
+.new-key-box code{font-family:monospace;background:#fff;padding:4px 8px;border-radius:4px;word-break:break-all}
+.msg{color:#666;font-size:13px;margin-top:4px}
+textarea.apikey{width:100%;height:40px;border:1px solid #ddd;border-radius:8px;padding:8px;font-family:monospace;font-size:14px;margin-bottom:8px;resize:none}
+</style>
+</head>
+<body>
+<nav>
+  <a href="/">Home</a>
+  <a href="/connect.html">接入工具</a>
+  <a href="/docs">API</a>
+  <a href="/topup">充值</a>
+  <a href="/withdraw">提现</a>
+</nav>
+<div class="container">
+  <div id="loginPrompt" style="display:none">
+    <div class="card">
+      <h2>请先登录</h2>
+      <p style="margin-bottom:12px"><a href="/login.html" class="btn">去登录 →</a></p>
+      <p style="font-size:13px;color:#999">或 <a href="/register.html">注册新账号</a></p>
+    </div>
+  </div>
+
+  <div id="mainContent" style="display:none">
+    <div class="card">
+      <h2>📊 Dashboard</h2>
+      <div id="stats"></div>
+    </div>
+
+    <div class="card">
+      <h2>🔑 API Keys</h2>
+      <div id="keys"></div>
+      <button class="btn-sm" onclick="generateKey()" id="genBtn" style="margin-top:12px">+ 生成新 Key</button>
+      <div class="new-key-box" id="newKeyBox">
+        <strong>🎉 新 Key（仅显示一次，请立即复制）:</strong><br>
+        <textarea class="apikey" id="newKeyText" readonly onclick="this.select()"></textarea>
+        <button class="btn-sm" onclick="copyNewKey()">📋 复制</button>
+      </div>
+      <p class="msg" id="keyMsg"></p>
+    </div>
+  </div>
+</div>
+<script>
+async function load() {
+  var res = await fetch('/api/v1/account');
+  if (!res.ok) {
+    document.getElementById('loginPrompt').style.display = 'block';
+    return;
+  }
+  document.getElementById('mainContent').style.display = 'block';
+  var acc = await res.json();
+  document.getElementById('stats').innerHTML = 
+    '<div class="stat"><div class="num">¥' + acc.balance.toFixed(4) + '</div><div class="lbl">余额</div></div>' +
+    '<div class="stat"><div class="num">' + acc.trustLevel + '</div><div class="lbl">等级</div></div>' +
+    '<div class="stat"><div class="num">' + ((acc.todayUsage.promptTokens + acc.todayUsage.completionTokens) / 1000).toFixed(0) + 'K</div><div class="lbl">今日 Token</div></div>' +
+    '<div class="stat"><div class="num">¥' + (acc.insurancePool || 0).toFixed(2) + '</div><div class="lbl">保险池</div></div>';
+
+  var keyRes = await fetch('/api/v1/auth/keys');
+  if (keyRes.ok) {
+    var keyData = await keyRes.json();
+    var keys = keyData.data || [];
+    var html = '';
+    keys.forEach(function(k) {
+      html += '<div class="key-row"><span><strong>' + k.prefix + '...</strong> (' + k.name + ')</span><span style="color:#999;font-size:12px">' + new Date(k.createdAt).toLocaleDateString('zh-CN') + '</span></div>';
+    });
+    document.getElementById('keys').innerHTML = html || '<p style="color:#999">暂无 Key</p>';
+  }
+}
+
+var newKeyValue = '';
+async function generateKey() {
+  var btn = document.getElementById('genBtn');
+  btn.disabled = true; btn.textContent = '生成中...';
+  document.getElementById('keyMsg').textContent = '';
+  try {
+    var res = await fetch('/api/v1/auth/keys', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name:'Web'}) });
+    var data = await res.json();
+    if (data.apiKey) {
+      newKeyValue = data.apiKey;
+      document.getElementById('newKeyText').value = data.apiKey;
+      document.getElementById('newKeyBox').style.display = 'block';
+      document.getElementById('keyMsg').textContent = '✅ ' + data.message;
+      setTimeout(load, 500);
+    } else {
+      document.getElementById('keyMsg').textContent = data.error?.message || '生成失败';
+    }
+  } catch(e) { document.getElementById('keyMsg').textContent = '网络错误'; }
+  btn.disabled = false; btn.textContent = '+ 生成新 Key';
+}
+function copyNewKey() {
+  var ta = document.getElementById('newKeyText');
+  ta.select();
+  document.execCommand('copy');
+  document.getElementById('keyMsg').textContent = '✅ 已复制到剪贴板';
+}
+load();
+</script>
+</body>
+</html>

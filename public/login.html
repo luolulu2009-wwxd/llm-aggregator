@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 — LLM Aggregator</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#fafafa;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.card{background:white;border-radius:16px;padding:32px;width:100%;max-width:380px;box-shadow:0 1px 3px rgba(0,0,0,0.1)}
+h1{font-size:24px;font-weight:700;text-align:center;margin-bottom:8px}
+.sub{text-align:center;color:#666;font-size:14px;margin-bottom:24px}
+input{width:100%;padding:12px;border:1px solid #ddd;border-radius:10px;font-size:15px;margin-bottom:12px}
+.btn{width:100%;padding:14px;background:#111;color:white;border:none;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:0.5}
+.msg{padding:12px;border-radius:10px;margin-top:12px;font-size:14px}
+.success{background:#f0fdf4;border:1px solid #86efac;color:#166534}
+.error{background:#fef2f2;border:1px solid #fca5a5;color:#991b1b}
+a{color:#2563eb}
+</style>
+</head>
+<body>
+<div class="card" id="app">
+  <h1>登录</h1>
+  <p class="sub">LLM Aggregator</p>
+  <div id="loginForm">
+    <input type="email" id="email" placeholder="邮箱" required>
+    <input type="password" id="password" placeholder="密码" required>
+    <button class="btn" id="btn" onclick="doLogin()">登录</button>
+  </div>
+  <div id="msg"></div>
+  <p style="text-align:center;margin-top:16px;font-size:14px"><a href="/register.html">注册新账号</a></p>
+</div>
+<script>
+async function doLogin() {
+  var btn = document.getElementById('btn');
+  var msg = document.getElementById('msg');
+  btn.disabled = true;
+  btn.textContent = '登录中...';
+  msg.innerHTML = '';
+  try {
+    var res = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value
+      })
+    });
+    var data = await res.json();
+    if (res.ok) {
+      msg.innerHTML = '<div class="msg success"><strong>✅ 登录成功</strong><br><br><a href="/dashboard.html">→ 进入 Dashboard</a></div>';
+      setTimeout(function(){ window.location.href = '/dashboard.html'; }, 1000);
+    } else {
+      msg.innerHTML = '<div class="msg error">' + (data.error?.message || '登录失败') + '</div>';
+    }
+  } catch(err) {
+    msg.innerHTML = '<div class="msg error">网络错误，请重试</div>';
+  }
+  btn.disabled = false;
+  btn.textContent = '登录';
+}
+</script>
+</body>
+</html>
