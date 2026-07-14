@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     : null;
 
   // Create user + API key in transaction
-  const user = await prisma.$transaction(async (tx) => {
+  const user = await prisma.$transaction(async (tx: any) => {
     const u = await tx.user.create({
       data: {
         email,

@@ -45,7 +45,7 @@ async function loadRules() {
 }
 
 export async function classifyPrompt(userMessage: string): Promise<{ intent: string; targetModel: string } | null> {
-  const rules = await loadRules();
+  const rules = (await loadRules())!;
   const lower = userMessage.toLowerCase();
 
   for (const rule of rules) {

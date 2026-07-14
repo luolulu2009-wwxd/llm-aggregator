@@ -14,7 +14,7 @@ export const anthropicAdapter: Adapter = {
     const systemMessage = req.messages.find((m) => m.role === "system");
     const messages = req.messages
       .filter((m) => m.role !== "system")
-      .map((m) => ({ role: m.role, content: m.content }));
+      .map((m: any) => ({ role: m.role, content: m.content }));
 
     const body: Record<string, unknown> = {
       model: req.model,

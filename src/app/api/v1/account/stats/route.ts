@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     days,
-    models: modelUsage.map(m => ({
+    models: modelUsage.map((m: any) => ({
       slug: m.modelSlug,
       cost: Number(m._sum.cost || 0),
       tokens: (m._sum.promptTokens || 0) + (m._sum.completionTokens || 0),

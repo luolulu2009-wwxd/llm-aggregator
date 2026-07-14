@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   const fee = amount * 0.02; // 2% withdrawal fee
   const netAmount = amount - fee;
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     await tx.user.update({ where: { id: userId }, data: { creditBalance: { decrement: amount } } });
     await tx.transaction.create({
       data: {

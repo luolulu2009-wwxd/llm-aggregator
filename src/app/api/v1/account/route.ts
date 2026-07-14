@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
       cost: Number(todayUsage._sum.cost || 0),
     },
     transactions,
-    insurancePool: await prisma.insurancePool.findFirst({ orderBy: { updatedAt: "desc" } }).then(p => p ? Number(p.balance) : 0),
+    insurancePool: await prisma.insurancePool.findFirst({ orderBy: { updatedAt: "desc" } }).then((p: any) => p ? Number(p.balance) : 0),
   });
 }
 
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
   const fee = amount * 0.05;
   const creditAmount = amount - fee;
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx: any) => {
     const user = await tx.user.update({
       where: { id: auth.userId },
       data: { creditBalance: { increment: creditAmount } },

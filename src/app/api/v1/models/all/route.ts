@@ -18,7 +18,7 @@ export async function GET() {
   });
 
   return Response.json({
-    data: models.map((m) => ({
+    data: models.map((m: any) => ({
       ...m,
       inputPrice: Number(m.inputPrice),
       outputPrice: Number(m.outputPrice),

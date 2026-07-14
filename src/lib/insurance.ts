@@ -39,7 +39,7 @@ export async function collectKeyStake(userId: string) {
   if (!user || Number(user.creditBalance) < KEY_UPLOAD_STAKE) {
     throw new Error(`上传 Key 需要 ¥${KEY_UPLOAD_STAKE} 押金（进入保险池）`);
   }
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     await tx.user.update({ where: { id: userId }, data: { creditBalance: { decrement: KEY_UPLOAD_STAKE } } });
     await tx.transaction.create({
       data: { userId, amount: -KEY_UPLOAD_STAKE, type: "deduct", description: "Key 上传押金（进入保险池）", balanceAfter: 0 },
@@ -78,7 +78,7 @@ export async function payoutKeyBanned(keyId: string) {
     const partialPayout = poolBalance;
     if (partialPayout <= 0) return null;
 
-    await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: any) => {
       await tx.insurancePool.update({
         where: { id: (await tx.insurancePool.findFirst({ orderBy: { updatedAt: "desc" } }))!.id },
         data: { balance: { decrement: partialPayout } },
@@ -101,7 +101,7 @@ export async function payoutKeyBanned(keyId: string) {
   }
 
   // Full payout
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     await tx.insurancePool.update({
       where: { id: (await tx.insurancePool.findFirst({ orderBy: { updatedAt: "desc" } }))!.id },
       data: { balance: { decrement: payoutAmount } },

@@ -51,7 +51,7 @@ export async function checkEarningsAnomaly(keyId: string, newReward: number): Pr
 
   const today = new Date().toISOString().slice(0, 10);
   const dailyKey = `earnings:${keyId}:${today}`;
-  const todayEarnings = await redis.incrbyfloat(dailyKey, newReward);
+  const todayEarnings = Number(await redis.incrbyfloat(dailyKey, newReward));
   await redis.expire(dailyKey, 86400);
 
   // Get 3-day average for comparison
@@ -97,7 +97,7 @@ export async function checkEarningsAnomaly(keyId: string, newReward: number): Pr
 
 // === 4. Admin: freeze user ===
 export async function freezeUser(userId: string, reason: string) {
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     await tx.user.update({ where: { id: userId }, data: { trustLevel: "L0" } });
     await tx.providerKey.updateMany({ where: { userId }, data: { status: "paused" } });
     await tx.abuseEvent.create({
@@ -108,7 +108,7 @@ export async function freezeUser(userId: string, reason: string) {
 
 // === 5. Admin: ban user ===
 export async function banUser(userId: string, reason: string) {
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: any) => {
     await tx.user.update({ where: { id: userId }, data: { trustLevel: "L0", creditBalance: 0 } });
     await tx.providerKey.updateMany({ where: { userId }, data: { status: "banned" } });
     await tx.apiKey.updateMany({ where: { userId }, data: { isActive: false } });

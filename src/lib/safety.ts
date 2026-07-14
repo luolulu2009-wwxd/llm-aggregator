@@ -17,7 +17,7 @@ const BLOCKED_PATTERNS: { pattern: RegExp; rule: string }[] = [
 ];
 
 export function checkContent(messages: { role: string; content: string }[]): SafetyResult {
-  const fullText = messages.map((m) => m.content).join(" ");
+  const fullText = messages.map((m: any) => m.content).join(" ");
 
   for (const { pattern, rule } of BLOCKED_PATTERNS) {
     if (pattern.test(fullText)) {
