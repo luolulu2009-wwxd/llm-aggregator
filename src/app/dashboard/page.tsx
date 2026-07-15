@@ -80,6 +80,18 @@ export default function DashboardPage() {
     } catch { setError("网络错误"); }
   }
 
+  function copyText(text: string) {
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+    } else {
+      // fallback for HTTP
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+    }
+  }
+
   async function manualFetch() {
     setLoading(true);
     try {
@@ -170,7 +182,7 @@ export default function DashboardPage() {
                 <div className="flex gap-2">
                   <input type="text" readOnly value={generatedKey}
                     className="flex-1 rounded-lg border border-green-300 bg-white px-3 py-2 font-mono text-sm" />
-                  <button onClick={() => { navigator.clipboard.writeText(generatedKey); }}
+                  <button onClick={() => copyText(generatedKey)}
                     className="rounded-lg bg-green-600 text-white px-3 py-2 text-sm">复制</button>
                 </div>
                 <button onClick={() => setGeneratedKey("")}
