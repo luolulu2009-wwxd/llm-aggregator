@@ -54,11 +54,12 @@ export async function POST(req: NextRequest) {
     .setExpirationTime("7d")
     .sign(JWT_SECRET);
 
+  const isProduction = process.env.NODE_ENV === "production";
   const response = NextResponse.json({ message: "登录成功", email: user.email });
   response.cookies.set("auth_token", token, {
     httpOnly: true,
-    secure: true,
-    sameSite: "lax",
+    secure: isProduction,
+    sameSite: isProduction ? "lax" : "lax",
     maxAge: 60 * 60 * 24 * 7,
     path: "/",
   });
