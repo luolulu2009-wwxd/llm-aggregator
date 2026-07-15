@@ -28,6 +28,22 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ data: keys });
 }
 
+// DELETE — deactivate (soft-delete) an API key
+export async function DELETE(req: NextRequest) {
+  const userId = await getUserId(req);
+  if (!userId) return NextResponse.json({ error: { message: "未登录" } }, { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  const keyId = searchParams.get("id");
+  if (!keyId) return NextResponse.json({ error: { message: "缺少 key id" } }, { status: 400 });
+
+  const key = await prisma.apiKey.findFirst({ where: { id: keyId, userId } });
+  if (!key) return NextResponse.json({ error: { message: "Key 不存在" } }, { status: 404 });
+
+  await prisma.apiKey.update({ where: { id: keyId }, data: { isActive: false } });
+  return NextResponse.json({ message: "已删除" });
+}
+
 // POST — generate new API key (full key returned ONCE)
 export async function POST(req: NextRequest) {
   const userId = await getUserId(req);

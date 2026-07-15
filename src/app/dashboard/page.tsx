@@ -71,6 +71,15 @@ export default function DashboardPage() {
     setGenerating(false);
   }
 
+  async function deleteApiKey(id: string) {
+    if (!confirm("确定删除这个 Key 吗？删除后无法恢复。")) return;
+    try {
+      const res = await fetch(`/api/v1/auth/keys?id=${id}`, { method: "DELETE" });
+      if (res.ok) loadApiKeys();
+      else setError((await res.json()).error?.message || "删除失败");
+    } catch { setError("网络错误"); }
+  }
+
   async function manualFetch() {
     setLoading(true);
     try {
@@ -131,6 +140,7 @@ export default function DashboardPage() {
                       <th className="text-left px-4 py-2">前缀</th>
                       <th className="text-left px-4 py-2">创建时间</th>
                       <th className="text-left px-4 py-2">最后使用</th>
+                      <th className="text-right px-4 py-2">操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -140,6 +150,10 @@ export default function DashboardPage() {
                         <td className="px-4 py-2 font-mono text-xs">{k.prefix}***</td>
                         <td className="px-4 py-2 text-zinc-500 text-xs">{new Date(k.createdAt).toLocaleString("zh-CN")}</td>
                         <td className="px-4 py-2 text-zinc-400 text-xs">{k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleString("zh-CN") : "未使用"}</td>
+                        <td className="px-4 py-2 text-right">
+                          <button onClick={() => deleteApiKey(k.id)}
+                            className="text-xs text-red-500 hover:text-red-700 hover:underline">删除</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
