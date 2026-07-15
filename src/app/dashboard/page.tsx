@@ -14,6 +14,7 @@ interface StatsData {
   models: { slug: string; cost: number; tokens: number }[];
   totalEarned: number;
 }
+interface ApiKeyInfo { id: string; name: string; prefix: string; createdAt: string; lastUsedAt: string | null }
 
 export default function DashboardPage() {
   const [user, setUser] = useState<UserInfo | null>(null);
@@ -23,9 +24,15 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // API Key management
+  const [apiKeys, setApiKeys] = useState<ApiKeyInfo[]>([]);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [generatedKey, setGeneratedKey] = useState("");
+  const [generating, setGenerating] = useState(false);
+
   useEffect(() => {
     fetch("/api/v1/auth/me").then(r => r.json()).then(d => {
-      if (d.email) { setUser(d); loadData(); }
+      if (d.email) { setUser(d); loadData(); loadApiKeys(); }
       else setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -40,6 +47,28 @@ export default function DashboardPage() {
       if (statsRes.ok) setStats(await statsRes.json());
     } catch {}
     setLoading(false);
+  }
+
+  async function loadApiKeys() {
+    try {
+      const res = await fetch("/api/v1/auth/keys");
+      if (res.ok) setApiKeys((await res.json()).data || []);
+    } catch {}
+  }
+
+  async function generateApiKey() {
+    setGenerating(true); setGeneratedKey(""); setError("");
+    try {
+      const res = await fetch("/api/v1/auth/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newKeyName || undefined }),
+      });
+      const d = await res.json();
+      if (res.ok) { setGeneratedKey(d.apiKey); setNewKeyName(""); loadApiKeys(); }
+      else setError(d.error?.message || "生成失败");
+    } catch { setError("网络错误"); }
+    setGenerating(false);
   }
 
   async function manualFetch() {
@@ -63,7 +92,7 @@ export default function DashboardPage() {
         </div>
         <div className="flex gap-2">
           <Link href="/docs" className="text-xs text-blue-600 hover:underline">API 文档</Link>
-          <Link href="/dashboard/keys" className="text-xs text-blue-600 hover:underline">管理 Key</Link>
+          <Link href="/dashboard/keys" className="text-xs text-blue-600 hover:underline">贡献 Key</Link>
         </div>
       </header>
 
@@ -89,6 +118,62 @@ export default function DashboardPage() {
             <Card label="今日费用" value={`¥${data.todayUsage.cost.toFixed(6)}`} />
             <Card label="等级" value={data.trustLevel} />
           </div>
+
+          {/* API Keys */}
+          <section>
+            <h2 className="text-lg font-semibold mb-3">API Keys</h2>
+            {apiKeys.length > 0 ? (
+              <div className="bg-white dark:bg-zinc-900 border rounded-xl overflow-x-auto mb-4">
+                <table className="w-full text-sm">
+                  <thead className="bg-zinc-50 dark:bg-zinc-800 text-zinc-500">
+                    <tr>
+                      <th className="text-left px-4 py-2">名称</th>
+                      <th className="text-left px-4 py-2">前缀</th>
+                      <th className="text-left px-4 py-2">创建时间</th>
+                      <th className="text-left px-4 py-2">最后使用</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {apiKeys.map(k => (
+                      <tr key={k.id} className="border-t">
+                        <td className="px-4 py-2 font-medium">{k.name || "-"}</td>
+                        <td className="px-4 py-2 font-mono text-xs">{k.prefix}***</td>
+                        <td className="px-4 py-2 text-zinc-500 text-xs">{new Date(k.createdAt).toLocaleString("zh-CN")}</td>
+                        <td className="px-4 py-2 text-zinc-400 text-xs">{k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleString("zh-CN") : "未使用"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-400 mb-4">暂无 API Key</p>
+            )}
+
+            {/* Generate new key */}
+            {generatedKey ? (
+              <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
+                <p className="text-green-700 font-medium text-sm">✅ Key 已生成（仅显示一次，请立即复制保存）</p>
+                <div className="flex gap-2">
+                  <input type="text" readOnly value={generatedKey}
+                    className="flex-1 rounded-lg border border-green-300 bg-white px-3 py-2 font-mono text-sm" />
+                  <button onClick={() => { navigator.clipboard.writeText(generatedKey); }}
+                    className="rounded-lg bg-green-600 text-white px-3 py-2 text-sm">复制</button>
+                </div>
+                <button onClick={() => setGeneratedKey("")}
+                  className="text-xs text-zinc-500 hover:underline">关闭</button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input type="text" value={newKeyName} onChange={e => setNewKeyName(e.target.value)}
+                  placeholder="Key 名称（可选）" className="flex-1 rounded-lg border px-3 py-2 text-sm" />
+                <button onClick={generateApiKey} disabled={generating}
+                  className="rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-4 py-2 text-sm font-medium disabled:opacity-50">
+                  {generating ? "生成中..." : "生成新 Key"}
+                </button>
+              </div>
+            )}
+            {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+          </section>
 
           {/* 7-day trend */}
           {stats && stats.days.length > 0 && (
