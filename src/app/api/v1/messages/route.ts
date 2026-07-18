@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const isStreaming = body.stream === true;
+  const isStreaming = body.stream === true && !mapModel(body.model)?.startsWith("anthropic");
 
   // Convert Anthropic messages → OpenAI format
   const systemMsg = body.system;
