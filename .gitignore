@@ -32,3 +32,4 @@ src/generated/
 pnpm-workspace.yaml
 .npmrc
 src/lib/billing.prod.ts
+.scratch/

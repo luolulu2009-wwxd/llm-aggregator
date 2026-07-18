@@ -46,6 +46,10 @@ export async function POST(req: NextRequest) {
     ? `${salt}:${createHash("sha256").update(salt + password).digest("hex")}`
     : null;
 
+  // First 100 users get ¥2, rest get ¥0.1
+  const userCount = await prisma.user.count();
+  const welcomeCredits = userCount < 100 ? 2 : 0.1;
+
   // Create user + API key in transaction
   const user = await prisma.$transaction(async (tx: any) => {
     const u = await tx.user.create({
@@ -54,7 +58,7 @@ export async function POST(req: NextRequest) {
         name: name || email.split("@")[0],
         passwordHash,
         trustLevel: "L0",
-        creditBalance: 0.1,
+        creditBalance: welcomeCredits,
       },
     });
 
@@ -71,10 +75,10 @@ export async function POST(req: NextRequest) {
     await tx.transaction.create({
       data: {
         userId: u.id,
-        amount: 0.1,
+        amount: welcomeCredits,
         type: "topup",
-        description: "Welcome credits",
-        balanceAfter: 0.1,
+        description: welcomeCredits >= 2 ? "🎉 前100用户注册奖励" : "Welcome credits",
+        balanceAfter: welcomeCredits,
       },
     });
 
@@ -94,9 +98,10 @@ export async function POST(req: NextRequest) {
     message: "注册成功！请保存你的 API Key",
   }, { status: 201 });
 
+  const isProduction = process.env.NODE_ENV === "production";
   response.cookies.set("auth_token", token, {
     httpOnly: true,
-    secure: true,
+    secure: isProduction,
     sameSite: "lax",
     maxAge: 60 * 60 * 24 * 7,
     path: "/",

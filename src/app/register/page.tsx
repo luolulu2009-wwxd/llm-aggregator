@@ -22,6 +22,7 @@ export default function RegisterPage() {
       const data = await res.json();
       if (res.ok && data.apiKey) {
         setApiKey(data.apiKey);
+        localStorage.setItem("apiKey", data.apiKey);
       } else {
         setError(data.error?.message || "注册失败");
       }

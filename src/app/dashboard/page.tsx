@@ -94,6 +94,7 @@ export default function DashboardPage() {
 
   async function manualFetch() {
     setLoading(true);
+    localStorage.setItem("apiKey", apiKey);
     try {
       const [accRes] = await Promise.all([
         fetch("/api/v1/account", { headers: { Authorization: `Bearer ${apiKey}` } }),
