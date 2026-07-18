@@ -11,6 +11,8 @@ import { evaluateTrustLevel } from "@/lib/trust";
 import { getRedis } from "@/lib/redis";
 import { recordUsage } from "@/lib/billing";
 import { detectSelfDealing, checkEarningsAnomaly } from "@/lib/abuse";
+import { retrieveMemory, injectMemoryIntoMessages, saveMessages, createMemoryFragments, createConversation } from "@/lib/memory";
+import { getQueryEmbedding } from "@/lib/embedding";
 
 // Lazy-init Redis on first request
 let redisReady = false;
@@ -53,32 +55,59 @@ export async function POST(req: NextRequest) {
   }
 
   const isStreaming = body.stream === true;
+  const userMessage = body.messages?.find((m: any) => m.role === "user")?.content || "";
+  const requestedConvId = body.conversation_id || null;
+
+  // --- Embedding (once, shared by memory + routing) — local BGE model, no API key needed ---
+  let queryEmbedding: number[] | null = null;
+  try {
+    if (userMessage.length >= 5) {
+      queryEmbedding = await getQueryEmbedding(userMessage);
+    }
+  } catch { /* embedding failure never blocks */ }
 
   // --- Model Selection (#8 + #9) ---
   let modelSlug: string;
   let routeReason: string;
 
+  // Map common model names to our slugs
+  const MODEL_ALIASES: Record<string, string> = {
+    "claude-sonnet-4-20250514": "anthropic/claude-sonnet-5",
+    "claude-sonnet-4": "anthropic/claude-sonnet-5",
+    "claude-opus-4": "anthropic/claude-opus-4-8",
+    "claude-haiku-4": "anthropic/claude-haiku-4-5",
+    "gpt-4o": "openai/gpt-4o",
+    "gpt-5": "openai/gpt-5",
+  };
+
   if (body.model && body.model !== "auto") {
-    // Manual — user specified a model
-    modelSlug = body.model;
+    modelSlug = MODEL_ALIASES[body.model] || body.model;
     routeReason = "manual";
   } else {
-    // Auto — use rule engine
-    const userMessage = body.messages?.find((m: any) => m.role === "user")?.content || "";
-    const classification = await classifyPrompt(userMessage);
+    // Auto — hybrid: keyword + semantic (if embedding available)
+    const classification = await classifyPrompt(userMessage, queryEmbedding);
     if (classification) {
       modelSlug = classification.targetModel;
-      routeReason = `rule:${classification.intent}`;
+      routeReason = `rule:${classification.intent} (confidence: ${classification.confidence.toFixed(2)})`;
     } else {
       modelSlug = DEFAULT_MODEL;
       routeReason = "rule:default";
     }
   }
 
+  // --- Memory Retrieval & Injection (#Memory) ---
+  let messagesWithMemory = body.messages;
+  try {
+    const memoryCtx = await retrieveMemory(userMessage, auth.userId);
+    if (memoryCtx) {
+      messagesWithMemory = injectMemoryIntoMessages(body.messages, memoryCtx);
+    }
+  } catch { /* memory failure never blocks */ }
+
   // --- Provider selection from Key Pool (#6) ---
   const provider = modelSlug.split("/")[0];
   const modelName = modelSlug.split("/")[1];
-  const modelsFallback = body.models || []; // user-configured fallback chain
+  const modelsFallback = body.models || [];
 
   let selectedKey = await selectBestKey(provider, modelName);
   let effectiveModel = modelSlug;
@@ -135,7 +164,7 @@ export async function POST(req: NextRequest) {
   const built = adapter.buildRequest(
     {
       model: effectiveModel.split("/")[1],
-      messages: body.messages,
+      messages: messagesWithMemory,
       temperature: body.temperature,
       max_tokens: body.max_tokens,
       top_p: body.top_p,
@@ -145,6 +174,13 @@ export async function POST(req: NextRequest) {
     providerApiKey,
   );
   const { url, headers, body: nativeBody, dispatcher } = built;
+
+  // Memory opts for response handlers (always on — auto-creates conversation if needed)
+  const memOpts = {
+    requestedConvId,
+    messages: body.messages,
+    userId: auth.userId,
+  };
 
   try {
     let response = await doFetch(url, headers, nativeBody, dispatcher);
@@ -160,7 +196,7 @@ export async function POST(req: NextRequest) {
         if (retryApiKey!) {
           const retryResp = await tryCall(adapter!, effectiveModel, body, retryApiKey, isStreaming);
           if (retryResp && retryResp.ok) {
-            return isStreaming ? streamResponse(retryResp) : jsonResponse(retryResp, adapter!, auth, selectedKey?.id, effectiveModel, provider, routeReason);
+            return isStreaming ? streamResponse(retryResp, adapter!, auth, retryKey?.id, effectiveModel, provider, routeReason, memOpts) : jsonResponse(retryResp, adapter!, auth, selectedKey?.id, effectiveModel, provider, routeReason, memOpts);
           }
         }
       }
@@ -178,7 +214,7 @@ export async function POST(req: NextRequest) {
             const fbResp = await tryCall(fbAdapter, fallbackModel, body, fbApiKey, isStreaming);
             if (fbResp && fbResp.ok) {
               routeReason += " → fallback:model";
-              return isStreaming ? streamResponse(fbResp) : jsonResponse(fbResp, fbAdapter, auth, fbKey.id, fallbackModel, fbProvider, routeReason);
+              return isStreaming ? streamResponse(fbResp, fbAdapter, auth, fbKey.id, fallbackModel, fbProvider, routeReason, memOpts) : jsonResponse(fbResp, fbAdapter, auth, fbKey.id, fallbackModel, fbProvider, routeReason, memOpts);
             }
           }
         }
@@ -190,10 +226,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (isStreaming) {
-      return streamResponse(response);
+      return streamResponse(response, adapter, auth, selectedKey?.id, effectiveModel, provider, routeReason, memOpts);
     }
 
-    return jsonResponse(response, adapter, auth, selectedKey?.id, effectiveModel, provider, routeReason);
+    return jsonResponse(response, adapter, auth, selectedKey?.id, effectiveModel, provider, routeReason, memOpts);
   } catch (err) {
     return Response.json(
       {
@@ -253,7 +289,16 @@ async function doFetch(
   return fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
 }
 
-async function jsonResponse(response: Response, adapter: ReturnType<typeof getAdapter>, auth: { userId: string; apiKeyId: string }, keyId: string | undefined, modelSlug: string, provider: string, routeReason: string) {
+async function jsonResponse(
+  response: Response,
+  adapter: ReturnType<typeof getAdapter>,
+  auth: { userId: string; apiKeyId: string },
+  keyId: string | undefined,
+  modelSlug: string,
+  provider: string,
+  routeReason: string,
+  memoryOpts?: { requestedConvId: string | null; messages: any[]; userId: string },
+) {
   const data = await response.json();
   const usage = adapter!.extractUsage(data);
 
@@ -267,12 +312,167 @@ async function jsonResponse(response: Response, adapter: ReturnType<typeof getAd
     }).catch(() => {});
   }
 
+  // Save messages + create memory fragment (always on, auto-creates conversation)
+  if (memoryOpts) {
+    const assistantContent = data.choices?.[0]?.message?.content || "";
+    const convId = memoryOpts.requestedConvId
+      || (await createConversation(memoryOpts.userId).catch(() => null))?.id;
+    if (convId) {
+      await saveMessages({
+        conversationId: convId,
+        messages: memoryOpts.messages,
+        provider,
+        modelSlug,
+      }).catch(() => {});
+      if (assistantContent) {
+        await createMemoryFragments({
+          userId: auth.userId,
+          conversationId: convId,
+          messages: memoryOpts.messages,
+          responseContent: assistantContent,
+          modelSlug,
+        }).catch(() => {});
+      }
+    }
+  }
+
   const standard = adapter!.parseResponse(data);
   return Response.json(standard);
 }
 
-function streamResponse(response: Response) {
-  return new Response(response.body, {
+function streamResponse(
+  response: Response,
+  adapter: ReturnType<typeof getAdapter>,
+  auth: { userId: string; apiKeyId: string },
+  keyId: string | undefined,
+  modelSlug: string,
+  provider: string,
+  routeReason: string,
+  memoryOpts?: { requestedConvId: string | null; messages: any[]; userId: string },
+) {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let fullContent = "";
+  let lastUsage: { prompt_tokens: number; completion_tokens: number } | null = null;
+  let messageStarted = false;
+  let contentBlockStarted = false;
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const enqueue = (s: string) => controller.enqueue(encoder.encode(s));
+
+      const ensureStarted = () => {
+        if (!messageStarted) {
+          enqueue("event: message_start\ndata: {\"type\":\"message\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"deepseek\",\"usage\":null}}\n\n");
+          messageStarted = true;
+        }
+        if (!contentBlockStarted) {
+          enqueue("event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n");
+          contentBlockStarted = true;
+        }
+      };
+
+      const sendStop = () => {
+        if (contentBlockStarted) {
+          enqueue("event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n");
+        }
+        const stopReason = "end_turn";
+        const usage = lastUsage || { prompt_tokens: 0, completion_tokens: Math.ceil(fullContent.length / 3) };
+        enqueue(`event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"${stopReason}\"},\"usage\":{\"input_tokens\":${usage.prompt_tokens},\"output_tokens\":${usage.completion_tokens}}}\n\n`);
+        enqueue("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n");
+      };
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const text = decoder.decode(value, { stream: true });
+
+          if (text.includes("data: [DONE]")) {
+            sendStop();
+            continue;
+          }
+
+          const lines = text.split("\n");
+          for (const line of lines) {
+            if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
+            try {
+              const json = JSON.parse(line.slice(6));
+              const delta = json.choices?.[0]?.delta;
+              const content = delta?.content;
+              const finishReason = json.choices?.[0]?.finish_reason;
+
+              if (finishReason && finishReason !== "null" && finishReason !== null) {
+                if (content) {
+                  ensureStarted();
+                  enqueue(`event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":${JSON.stringify(content)}}}\n\n`);
+                  fullContent += content;
+                }
+                sendStop();
+                if (json.usage) {
+                  lastUsage = { prompt_tokens: json.usage.prompt_tokens || 0, completion_tokens: json.usage.completion_tokens || 0 };
+                }
+                break;
+              }
+
+              if (content) {
+                ensureStarted();
+                enqueue(`event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":${JSON.stringify(content)}}}\n\n`);
+                fullContent += content;
+              }
+
+              if (json.usage) {
+                lastUsage = { prompt_tokens: json.usage.prompt_tokens || 0, completion_tokens: json.usage.completion_tokens || 0 };
+              }
+            } catch {}
+          }
+        }
+      } finally {
+        if (contentBlockStarted || messageStarted) {
+          try { sendStop(); } catch {}
+        }
+        controller.close();
+
+        const tokens = lastUsage || {
+          prompt_tokens: 0,
+          completion_tokens: Math.ceil(fullContent.length / 3),
+        };
+
+        if (keyId) {
+          recordUsage({
+            userId: auth.userId, apiKeyId: auth.apiKeyId, providerKeyId: keyId,
+            modelSlug, provider,
+            promptTokens: tokens.prompt_tokens, completionTokens: tokens.completion_tokens,
+            routeReason, isStreaming: true, durationMs: 0,
+          }).catch(() => {});
+        }
+
+        if (memoryOpts && fullContent) {
+          const convId = memoryOpts.requestedConvId
+            || await createConversation(memoryOpts.userId).catch(() => null).then(c => c?.id).catch(() => null);
+          if (convId) {
+            saveMessages({
+              conversationId: convId,
+              messages: [...memoryOpts.messages, { role: "assistant", content: fullContent }],
+              provider,
+              modelSlug,
+            }).catch(() => {});
+            createMemoryFragments({
+              userId: auth.userId,
+              conversationId: convId,
+              messages: memoryOpts.messages,
+              responseContent: fullContent,
+              modelSlug,
+            }).catch(() => {});
+          }
+        }
+      }
+    },
+  });
+
+  return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -280,7 +480,6 @@ function streamResponse(response: Response) {
     },
   });
 }
-
 function errorResponse(status: number) {
   return Response.json(
     {

@@ -57,7 +57,15 @@ export async function selectBestKey(
     where: { provider, modelFamily, status: "active" },
     orderBy: { todayUsed: "asc" },
   });
-  return key ? { id: key.id, keyEncrypted: key.keyEncrypted } : null;
+  
+  if (key) return { id: key.id, keyEncrypted: key.keyEncrypted };
+  
+  // Fallback: try provider-default
+  const fallbackKey = await prisma.providerKey.findFirst({
+    where: { provider, modelFamily: provider + "-default", status: "active" },
+    orderBy: { todayUsed: "asc" },
+  });
+  return fallbackKey ? { id: fallbackKey.id, keyEncrypted: fallbackKey.keyEncrypted } : null;
 }
 
 export async function listProviderKeys(userId: string) {
@@ -90,4 +98,23 @@ export async function deleteProviderKey(userId: string, keyId: string) {
   const key = await prisma.providerKey.findFirst({ where: { id: keyId, userId } });
   if (!key) throw new Error("Key not found");
   return prisma.providerKey.delete({ where: { id: keyId } });
+}
+
+/**
+ * Select a key for embedding calls. Tries OpenAI first, then GLM, then Qwen.
+ * Returns both the encrypted key and provider info for endpoint selection.
+ */
+export async function selectBestKeyForEmbedding(): Promise<{
+  id: string; keyEncrypted: string; provider: string;
+} | null> {
+  const embeddingProviders = ["openai", "glm", "qwen"];
+
+  for (const prov of embeddingProviders) {
+    const key = await prisma.providerKey.findFirst({
+      where: { provider: prov, status: "active" },
+      orderBy: { todayUsed: "asc" },
+    });
+    if (key) return { id: key.id, keyEncrypted: key.keyEncrypted, provider: prov };
+  }
+  return null;
 }

@@ -3,18 +3,41 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 
-export function Nav() {
-  const [user, setUser] = useState<{ email: string } | null>(null);
+interface Props {
+  initialUser?: { email: string } | null;
+}
+
+export function Nav({ initialUser }: Props) {
+  const [user, setUser] = useState<{ email: string } | null>(initialUser || null);
 
   useEffect(() => {
-    fetch("/api/v1/auth/me")
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.email) setUser(d); })
-      .catch(() => {});
-  }, []);
+    // If server already detected user, no need to re-fetch
+    if (initialUser) return;
+
+    async function check() {
+      const res = await fetch("/api/v1/auth/me");
+      if (res.ok) {
+        const d = await res.json();
+        if (d.email) { setUser(d); return; }
+      }
+      // Fallback: API key from localStorage
+      const storedKey = localStorage.getItem("apiKey");
+      if (storedKey) {
+        const r2 = await fetch("/api/v1/auth/me", {
+          headers: { Authorization: `Bearer ${storedKey}` },
+        });
+        if (r2.ok) {
+          const d = await r2.json();
+          if (d.email) setUser(d);
+        }
+      }
+    }
+    check();
+  }, [initialUser]);
 
   async function logout() {
     await fetch("/api/v1/auth/logout", { method: "POST" });
+    localStorage.removeItem("apiKey");
     setUser(null);
     window.location.href = "/";
   }
