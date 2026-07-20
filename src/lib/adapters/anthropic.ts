@@ -1,7 +1,7 @@
 import type { Adapter, StandardRequest, StandardResponse } from "./types";
 import { ProxyAgent } from "undici";
 
-const ANTHROPIC_PROXY = process.env.ANTHROPIC_PROXY;
+const ANTHROPIC_PROXY = process.env.ANTHROPIC_PROXY || "http://127.0.0.1:7897";
 
 const dispatcher = ANTHROPIC_PROXY
   ? new ProxyAgent({ uri: ANTHROPIC_PROXY, requestTls: { rejectUnauthorized: false } })
@@ -27,8 +27,6 @@ export const anthropicAdapter: Adapter = {
     if (req.top_p !== undefined) body.top_p = req.top_p;
     if (req.stop) body.stop_sequences = Array.isArray(req.stop) ? req.stop : [req.stop];
     if (req.stream) body.stream = true;
-    // Disable extended thinking for standard chat — otherwise all tokens go to thinking
-    body.thinking = { type: "disabled" };
 
     return {
       url: "https://api.anthropic.com/v1/messages",
