@@ -22,7 +22,7 @@ export async function PATCH(req: NextRequest) {
 
 async function handleProxy(req: NextRequest) {
   const path = req.nextUrl.pathname.replace("/api/", "");
-  const url = `https://api.anthropic.com/api/${path}${req.nextUrl.search}`;
+  const url = `https://api.anthropic.com/${path}${req.nextUrl.search}`;
 
   const headers: Record<string, string> = {};
   req.headers.forEach((value, key) => {

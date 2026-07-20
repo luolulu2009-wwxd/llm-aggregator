@@ -188,7 +188,7 @@ export async function classifyPrompt(
   return null;
 }
 
-export const DEFAULT_MODEL = "deepseek/deepseek-chat";
+export const DEFAULT_MODEL = "anthropic/claude-sonnet-5"; // Falls back to DeepSeek when no Anthropic key
 
 // ── Analytics ──
 

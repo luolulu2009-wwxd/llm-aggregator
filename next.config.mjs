@@ -2,7 +2,8 @@
 const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
-  outputFileTracingRoot: "/Users/luolulu/llm-aggregator",
+
+  // Anthropic API compatible paths for Claude Code
   async rewrites() {
     return [
       {

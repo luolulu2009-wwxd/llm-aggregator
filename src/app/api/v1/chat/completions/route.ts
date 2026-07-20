@@ -5,6 +5,7 @@ import { validateApiKey } from "@/lib/auth";
 import { selectBestKey } from "@/lib/keys";
 import { decrypt } from "@/lib/crypto";
 import { classifyPrompt, DEFAULT_MODEL } from "@/lib/router";
+import { classifyComplexity } from "@/lib/classifier";
 import { checkContent } from "@/lib/safety";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { evaluateTrustLevel } from "@/lib/trust";
@@ -70,12 +71,25 @@ export async function POST(req: NextRequest) {
   let modelSlug: string;
   let routeReason: string;
 
-  // Map common model names to our slugs
+  // Map common model names to our internal slugs (kept in sync with /messages route)
   const MODEL_ALIASES: Record<string, string> = {
+    "claude-sonnet-5": "anthropic/claude-sonnet-5",
+    "claude-sonnet-4-6": "anthropic/claude-sonnet-4-6",
+    "claude-sonnet-4.6": "anthropic/claude-sonnet-4-6",
     "claude-sonnet-4-20250514": "anthropic/claude-sonnet-5",
     "claude-sonnet-4": "anthropic/claude-sonnet-5",
+    "claude-opus-4-8": "anthropic/claude-opus-4-8",
+    "claude-opus-4.8": "anthropic/claude-opus-4-8",
+    "claude-opus-4-7": "anthropic/claude-opus-4-7",
+    "claude-opus-4-6": "anthropic/claude-opus-4-6",
     "claude-opus-4": "anthropic/claude-opus-4-8",
+    "claude-haiku-4-5": "anthropic/claude-haiku-4-5-20251001",
     "claude-haiku-4": "anthropic/claude-haiku-4-5",
+    "claude-fable-5": "anthropic/claude-fable-5",
+    "claude-3.5-sonnet": "anthropic/claude-sonnet-4-5-20250929",
+    "claude-3.5-haiku": "anthropic/claude-haiku-4-5-20251001",
+    "claude-3-opus": "anthropic/claude-opus-4-1-20250805",
+    "claude-sonnet-4-5": "anthropic/claude-sonnet-4-5-20250929",
     "gpt-4o": "openai/gpt-4o",
     "gpt-5": "openai/gpt-5",
   };
@@ -84,14 +98,17 @@ export async function POST(req: NextRequest) {
     modelSlug = MODEL_ALIASES[body.model] || body.model;
     routeReason = "manual";
   } else {
-    // Auto — hybrid: keyword + semantic (if embedding available)
+    // Smart routing: intent match → complexity-based tiered selection
     const classification = await classifyPrompt(userMessage, queryEmbedding);
     if (classification) {
       modelSlug = classification.targetModel;
-      routeReason = `rule:${classification.intent} (confidence: ${classification.confidence.toFixed(2)})`;
+      routeReason = `rule:${classification.intent}`;
     } else {
-      modelSlug = DEFAULT_MODEL;
-      routeReason = "rule:default";
+      // Cost-optimal: score message complexity → pick the right model tier
+      const convLen = (body.messages || []).reduce((sum: number, m: any) => sum + (m.content?.length || 0), 0);
+      const complexity = classifyComplexity(userMessage, convLen);
+      modelSlug = complexity.primaryModel;
+      routeReason = `auto:${complexity.complexity}(s${complexity.score})`;
     }
   }
 
@@ -104,27 +121,40 @@ export async function POST(req: NextRequest) {
     }
   } catch { /* memory failure never blocks */ }
 
-  // --- Provider selection from Key Pool (#6) ---
+  // --- Provider selection from Key Pool (parallel, with ultimate fallback) ---
   const provider = modelSlug.split("/")[0];
   const modelName = modelSlug.split("/")[1];
   const modelsFallback = body.models || [];
 
-  let selectedKey = await selectBestKey(provider, modelName);
+  // Try primary + fallback keys in parallel
+  const fallbackCandidates = modelsFallback.length > 0
+    ? modelsFallback.map((fb: string) => fb.split("/")[0]).filter((p: string) => p !== provider)
+    : [];
+
+  const keyResults = await Promise.all([
+    selectBestKey(provider, modelName),
+    ...fallbackCandidates.map((p: string) => selectBestKey(p, modelName)),
+    selectBestKey("deepseek", "deepseek-chat"), // ultimate fallback
+  ]);
+
+  let selectedKey = keyResults[0];
   let effectiveModel = modelSlug;
 
-  // --- Fallback: try alternative models from the `models` array (#10) ---
   if (!selectedKey && modelsFallback.length > 0) {
-    for (const fallbackModel of modelsFallback) {
-      const fbProvider = fallbackModel.split("/")[0];
-      const fbModel = fallbackModel.split("/")[1];
-      const fbKey = await selectBestKey(fbProvider, fbModel);
-      if (fbKey) {
-        selectedKey = fbKey;
-        effectiveModel = fallbackModel;
-        routeReason += ` → fallback:model`;
+    for (let i = 0; i < modelsFallback.length; i++) {
+      if (keyResults[i + 1]) {
+        selectedKey = keyResults[i + 1];
+        effectiveModel = modelsFallback[i];
+        routeReason += " → fallback:model";
         break;
       }
     }
+  }
+
+  if (!selectedKey && keyResults[keyResults.length - 1]) {
+    selectedKey = keyResults[keyResults.length - 1];
+    effectiveModel = "deepseek/deepseek-chat";
+    routeReason += " → fallback:deepseek";
   }
 
   if (!selectedKey) {

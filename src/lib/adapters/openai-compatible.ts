@@ -30,7 +30,7 @@ export function createOpenAICompatibleAdapter(
           model: req.model || defaultModel,
           messages: req.messages,
           temperature: req.temperature,
-          max_tokens: req.max_tokens,
+          max_tokens: req.max_tokens || 256, // V4 models need higher minimum
           top_p: req.top_p,
           stop: req.stop,
           stream: req.stream ?? false,

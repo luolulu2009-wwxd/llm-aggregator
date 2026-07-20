@@ -51,21 +51,39 @@ export async function uploadProviderKey(input: {
 export async function selectBestKey(
   provider: string,
   modelFamily: string,
-): Promise<{ id: string; keyEncrypted: string } | null> {
-  // Simple: pick the key with lowest usage
-  const key = await prisma.providerKey.findFirst({
-    where: { provider, modelFamily, status: "active" },
-    orderBy: { todayUsed: "asc" },
-  });
-  
-  if (key) return { id: key.id, keyEncrypted: key.keyEncrypted };
-  
-  // Fallback: try provider-default
-  const fallbackKey = await prisma.providerKey.findFirst({
-    where: { provider, modelFamily: provider + "-default", status: "active" },
-    orderBy: { todayUsed: "asc" },
-  });
-  return fallbackKey ? { id: fallbackKey.id, keyEncrypted: fallbackKey.keyEncrypted } : null;
+): Promise<{ id: string; keyEncrypted: string; modelFamily: string } | null> {
+  try {
+    // Simple: pick the key with lowest usage
+    const key = await prisma.providerKey.findFirst({
+      where: { provider, modelFamily, status: "active" },
+      orderBy: { todayUsed: "asc" },
+    });
+
+    if (key) return { id: key.id, keyEncrypted: key.keyEncrypted, modelFamily: key.modelFamily };
+
+    // Fallback: try provider-default
+    const fallbackKey = await prisma.providerKey.findFirst({
+      where: { provider, modelFamily: provider + "-default", status: "active" },
+      orderBy: { todayUsed: "asc" },
+    });
+    if (fallbackKey) return { id: fallbackKey.id, keyEncrypted: fallbackKey.keyEncrypted, modelFamily: fallbackKey.modelFamily };
+
+    // Provider-generic fallback: one API key usually works for ALL models from that provider
+    const anyProviderKey = await prisma.providerKey.findFirst({
+      where: { provider, status: "active" },
+      orderBy: { todayUsed: "asc" },
+    });
+    if (anyProviderKey) {
+      console.log(`[selectBestKey] Using generic ${provider} key ${anyProviderKey.id} (modelFamily: ${anyProviderKey.modelFamily}) for requested ${modelFamily}`);
+      return { id: anyProviderKey.id, keyEncrypted: anyProviderKey.keyEncrypted, modelFamily: anyProviderKey.modelFamily };
+    }
+
+    console.warn(`[selectBestKey] No active key found for ${provider}/${modelFamily}`);
+    return null;
+  } catch (err) {
+    console.error(`[selectBestKey] Error querying ${provider}/${modelFamily}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 export async function listProviderKeys(userId: string) {

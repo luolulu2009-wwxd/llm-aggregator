@@ -33,6 +33,18 @@ export default function RegisterPage() {
     }
   }
 
+  const ccConfig = apiKey ? `{
+  "ANTHROPIC_AUTH_TOKEN": "${apiKey}",
+  "ANTHROPIC_BASE_URL": "https://llm.saylulu.com/api",
+  "ANTHROPIC_MODEL": "claude-sonnet-5"
+}` : "";
+
+  async function copyConfig() {
+    try { await navigator.clipboard.writeText(ccConfig); } catch { /* noop */ }
+  }
+
+  const [copied, setCopied] = useState(false);
+
   // Success screen
   if (apiKey) {
     return (
@@ -44,11 +56,25 @@ export default function RegisterPage() {
           <div className="bg-white border rounded-lg p-3 font-mono text-sm break-all">
             {apiKey}
           </div>
+
+          {/* Claude Code 一键配置 */}
+          <div className="bg-zinc-900 text-left rounded-xl p-4 text-xs space-y-2">
+            <p className="text-green-400 font-medium">Claude Code 一键配置</p>
+            <pre className="text-green-300 overflow-x-auto whitespace-pre-wrap">{ccConfig}</pre>
+            <button
+              onClick={async () => { await copyConfig(); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+              className="rounded-lg bg-green-600 text-white px-4 py-1.5 text-sm font-medium"
+            >
+              {copied ? "✅ 已复制" : "📋 复制配置"}
+            </button>
+            <p className="text-zinc-400 text-[10px]">粘贴到 VSCode 的 .claude/settings.json 即可使用</p>
+          </div>
+
           <a
             href="/login"
             className="block w-full rounded-lg bg-zinc-900 text-white py-3 font-medium"
           >
-            去登录 →
+            去 Dashboard →
           </a>
         </div>
       </main>
