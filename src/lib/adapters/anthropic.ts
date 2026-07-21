@@ -27,6 +27,8 @@ export const anthropicAdapter: Adapter = {
     if (req.top_p !== undefined) body.top_p = req.top_p;
     if (req.stop) body.stop_sequences = Array.isArray(req.stop) ? req.stop : [req.stop];
     if (req.stream) body.stream = true;
+    if (req.tools) body.tools = req.tools;
+    if (req.tool_choice) body.tool_choice = req.tool_choice;
 
     return {
       url: "https://api.anthropic.com/v1/messages",

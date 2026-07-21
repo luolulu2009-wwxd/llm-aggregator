@@ -1,12 +1,14 @@
 /** OpenAI-compatible request (our internal standard format) */
 export interface StandardRequest {
   model: string;
-  messages: { role: string; content: string }[];
+  messages: { role: string; content: string; tool_calls?: any; tool_call_id?: string; name?: string }[];
   temperature?: number;
   max_tokens?: number;
   top_p?: number;
   stop?: string | string[];
   stream?: boolean;
+  tools?: any[];        // Anthropic/OpenAI tool definitions
+  tool_choice?: any;    // Anthropic tool_choice or OpenAI tool_choice
 }
 
 /** OpenAI-compatible response (our internal standard format) */

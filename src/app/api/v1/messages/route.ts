@@ -288,6 +288,8 @@ export async function POST(req: NextRequest) {
     top_p: body.top_p,
     stop: body.stop_sequences || body.stop,
     stream: isStreaming,
+    tools: body.tools,
+    tool_choice: body.tool_choice,
   }, apiKey);
 
   let resp: Response | null = null;
@@ -362,6 +364,8 @@ export async function POST(req: NextRequest) {
             top_p: body.top_p,
             stop: body.stop_sequences || body.stop,
             stream: isStreaming,
+            tools: body.tools,
+            tool_choice: body.tool_choice,
           }, fbApiKey);
 
           try {
