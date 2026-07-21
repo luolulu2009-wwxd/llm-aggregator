@@ -107,8 +107,41 @@ export async function POST(req: NextRequest) {
     if (typeof m.content === "string") {
       openaiMessages.push({ role: m.role, content: m.content });
     } else if (Array.isArray(m.content)) {
+      // Convert Anthropic content blocks → OpenAI format
+      // Preserve tool_use and tool_result blocks — critical for Claude Code
       const text = m.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
-      if (text) openaiMessages.push({ role: m.role, content: text });
+      const toolUses = m.content.filter((b: any) => b.type === "tool_use");
+      const toolResults = m.content.filter((b: any) => b.type === "tool_result");
+
+      if (m.role === "assistant" && toolUses.length > 0) {
+        // Assistant with tool_use → convert to OpenAI tool_calls format
+        const toolCalls = toolUses.map((tu: any, i: number) => ({
+          id: tu.id || `toolu_${i}`,
+          type: "function" as const,
+          function: { name: tu.name || "", arguments: JSON.stringify(tu.input || {}) },
+        }));
+        openaiMessages.push({
+          role: "assistant",
+          content: text || null,
+          tool_calls: toolCalls,
+        } as any);
+      } else if (toolResults.length > 0) {
+        // User with tool_result → convert each to OpenAI "tool" role message
+        for (const tr of toolResults) {
+          openaiMessages.push({
+            role: "tool",
+            tool_call_id: tr.tool_use_id || "",
+            content: typeof tr.content === "string" ? tr.content : JSON.stringify(tr.content || ""),
+          } as any);
+        }
+        // If there's also text, add it after tool results
+        if (text) {
+          openaiMessages.push({ role: m.role, content: text });
+        }
+      } else if (text) {
+        // Plain text message — no tools
+        openaiMessages.push({ role: m.role, content: text });
+      }
     }
   }
 
