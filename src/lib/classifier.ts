@@ -184,10 +184,9 @@ export function classifyComplexity(
   else                   { tier = 4; complexity = "deep"; }
 
   const language = detectLanguage(message);
-  // Note: No static reordering! Weight Engine learns language preferences from data.
+  // Curated order: TIER_CANDIDATES is manually ranked by quality/cost fit per tier.
+  // No random shuffle — Weight Engine takes over from real data.
   const candidates = [...TIER_CANDIDATES[tier]];
-  // ε-greedy shuffle breaks ties → exploration → system self-evolves
-  candidates.sort(() => Math.random() - 0.5);
   const primaryModel = candidates[0];
   const pricing = PRICING[primaryModel] || { input: 0.01, output: 0.04 };
   const estimatedInputTokens = Math.ceil(message.length / 2);

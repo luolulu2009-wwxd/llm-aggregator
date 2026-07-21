@@ -1,11 +1,10 @@
 /**
  * Weight Engine — multi-objective scoring + ε-greedy exploration.
  *
- * Ranks model candidates by composite score:
- *   Score = 0.45×success + 0.15×content + 0.10×latency + 0.20×cost + 0.10×explore
+ * Cold start: uses curated tier position (TIER_CANDIDATES order) as default score.
+ * As data accumulates, gradually shifts from curated → data-driven.
  *
- * ε-greedy: 90% exploit (best model), 10% explore (random candidate)
- * Exploration bonus decays as confidence grows → converges to optimal.
+ * Score (warm) = 0.45×success + 0.15×(1-empty) + 0.10×latency + 0.20×cost
  */
 import { getSnapshot, MetricSnapshot } from "./metrics";
 
@@ -33,11 +32,34 @@ const PRICE: Record<string, number> = {
   "openrouter/gpt-5": 0.18,
 };
 
-const EPSILON = 0.10; // 10% exploration rate
+// ── Curated tier order (mirrors classifier.ts TIER_CANDIDATES) ──
+// Higher position index → lower default score
+const CURATED_ORDER: Record<string, number> = {
+  // Tier 0: trivial
+  "deepseek/deepseek-v4-flash": 0, "moonshot/moonshot-v1-8k": 1,
+  "glm/glm-4.7-flash": 2, "doubao/doubao-seed-evolving": 3,
+  // Tier 1: simple
+  "deepseek/deepseek-v4-pro": 0, "doubao/doubao-seed-2-1-pro": 2,
+  "qwen/qwen-max-latest": 3, "openrouter/claude-sonnet-5": 5,
+  // Tier 2: moderate
+  "glm/glm-5.1": 4, "openai/gpt-5": 5,
+  // Tier 3: complex
+  "openrouter/gpt-5": 4, "glm/glm-5.2": 5, "anthropic/claude-opus-4-8": 6,
+  // Tier 4: deep
+  "openrouter/claude-opus-4-8": 0,
+};
+
+function getCuratedScore(slug: string): number {
+  // Lower position = higher score; default mid-range for unlisted models
+  const pos = CURATED_ORDER[slug];
+  if (pos !== undefined) return Math.max(0.2, 0.95 - pos * 0.12);
+  return 0.5; // neutral for unlisted
+}
+
+const EPSILON = 0.02; // 2% exploration — low because curated order handles cold start
 
 /**
- * Score a single model candidate.
- * Higher = better choice.
+ * Score a model candidate. Cold start → curated order. Warm → blend with real data.
  */
 function scoreCandidate(
   slug: string,
@@ -46,25 +68,29 @@ function scoreCandidate(
 ): number {
   const snap = getSnapshot(slug, tier, language);
   const price = PRICE[slug] || 0.01;
+  const curated = getCuratedScore(slug);
 
-  // No data → neutral score, boosted for exploration
-  if (!snap || snap.calls < 3) return 0.5 + (1 / Math.sqrt(1));
+  // No data → 100% curated
+  if (!snap || snap.calls < 5) return curated;
 
-  const s = snap;
-  const costNorm = 1 / (1 + price * 100);
-
-  return (
-    0.45 * s.successRate +
-    0.15 * (1 - s.emptyRate) +
-    0.10 * (1 - Math.min(s.avgLatencyMs / 10000, 1)) +
-    0.20 * costNorm +
-    0.10 * (1 / Math.sqrt(s.calls + 1)) // exploration bonus
+  // Gradual data takeover: calls 5→30, data weight 0→1
+  const dataWeight = Math.min(1, (snap.calls - 5) / 25);
+  const dataScore = (
+    0.45 * snap.successRate +
+    0.15 * (1 - snap.emptyRate) +
+    0.10 * (1 - Math.min(snap.avgLatencyMs / 10000, 1)) +
+    0.20 * (1 / (1 + price * 100))
   );
+
+  return curated * (1 - dataWeight) + dataScore * dataWeight;
 }
 
 /**
- * Rank candidates by score, with ε-greedy exploration.
- * Returns reordered list: best first.
+ * Rank candidates by composite score.
+ *
+ * Cold start: uses curated order (TIER_CANDIDATES position).
+ * Warm: blends curated + real performance data.
+ * ε-greedy: 2% chance to swap #1 with a lower-ranked candidate for exploration.
  */
 export function rankCandidates(
   candidates: string[],
@@ -73,15 +99,15 @@ export function rankCandidates(
 ): string[] {
   if (candidates.length <= 1) return candidates;
 
-  // ε-greedy: randomly shuffle one candidate to front
-  const explore = Math.random() < EPSILON && candidates.length > 1;
-  const shuffled = explore
-    ? [candidates[Math.floor(Math.random() * (candidates.length - 1) + 1)], ...candidates.filter((_, i) => i !== 1)]
-    : [...candidates];
-
-  // Score + sort (stable sort preserves ε-greedy shuffle for ties)
-  const scored = shuffled.map(slug => ({ slug, score: scoreCandidate(slug, tier, language) }));
+  // Score + sort
+  const scored = candidates.map(slug => ({ slug, score: scoreCandidate(slug, tier, language) }));
   scored.sort((a, b) => b.score - a.score);
+
+  // ε-greedy: 2% chance to promote a random candidate to #1 for exploration
+  if (Math.random() < EPSILON && scored.length > 1) {
+    const swapIdx = 1 + Math.floor(Math.random() * (scored.length - 1));
+    [scored[0], scored[swapIdx]] = [scored[swapIdx], scored[0]];
+  }
 
   return scored.map(s => s.slug);
 }

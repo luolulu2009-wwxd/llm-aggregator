@@ -233,10 +233,13 @@ export async function POST(req: NextRequest) {
       modelSlug = classification.targetModel;
       routeReason = `rule:${classification.intent}`;
     } else {
-      // Cost-optimal: score message complexity → pick the right model tier
+      // Cost-optimal: score message complexity → weight engine picks the best model
       const convLen = openaiMessages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
       complexity = classifyComplexity(userMessage, convLen);
-      modelSlug = complexity.primaryModel;
+      // Weight Engine ranks candidates → best becomes primary
+      const ranked = rankCandidates(complexity.candidates, complexity.tier, complexity.language);
+      modelSlug = ranked[0];
+      complexity.candidates = ranked; // update candidates to ranked order for fallback
       routeReason = `auto:${complexity.complexity}(s${complexity.score})`;
       costTier = complexity.complexity;
     }
@@ -247,10 +250,8 @@ export async function POST(req: NextRequest) {
   const modelName = modelSlug.split("/")[1];
   const modelsFallback = body.models || [];
 
-  // Build candidate list: Weight-Engine-ranked tier candidates + user fallbacks + DeepSeek
-  const tierCandidates = complexity
-    ? rankCandidates(complexity.candidates, complexity.tier, complexity.language)
-    : [];
+  // Build candidate list: already-ranked by weight engine in auto mode
+  const tierCandidates = complexity?.candidates || [];
   const userFallbacks = modelsFallback.length > 0
     ? modelsFallback.filter((fb: string) => fb !== modelSlug)
     : [];
