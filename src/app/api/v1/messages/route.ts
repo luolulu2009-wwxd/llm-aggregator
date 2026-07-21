@@ -92,6 +92,34 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const isStreaming = body.stream === true;
 
+  // Convert Anthropic tools → OpenAI tools format
+  // Anthropic: {name, description, input_schema}
+  // OpenAI:   {type:"function", function:{name, description, parameters}}
+  const openaiTools = body.tools?.map((t: any) => ({
+    type: "function" as const,
+    function: {
+      name: t.name,
+      description: t.description || "",
+      parameters: t.input_schema || {},
+    },
+  }));
+
+  // Convert Anthropic tool_choice → OpenAI tool_choice
+  // Anthropic: {type:"auto"|"any"|"tool"} or {type:"tool", name:"x"}
+  // OpenAI:   "auto"|"required"|"none" or {type:"function", function:{name:"x"}}
+  let openaiToolChoice: any = undefined;
+  if (body.tool_choice) {
+    if (typeof body.tool_choice === "string") {
+      openaiToolChoice = body.tool_choice; // already OpenAI format
+    } else if (body.tool_choice.type === "any" || body.tool_choice.type === "auto") {
+      openaiToolChoice = body.tool_choice.type === "any" ? "required" : "auto";
+    } else if (body.tool_choice.type === "tool") {
+      openaiToolChoice = { type: "function", function: { name: body.tool_choice.name } };
+    } else {
+      openaiToolChoice = body.tool_choice; // pass through as-is
+    }
+  }
+
   // Convert Anthropic messages → OpenAI format (sync, fast)
   const systemMsg = body.system;
   const openaiMessages: { role: string; content: string }[] = [];
@@ -288,8 +316,8 @@ export async function POST(req: NextRequest) {
     top_p: body.top_p,
     stop: body.stop_sequences || body.stop,
     stream: isStreaming,
-    tools: body.tools,
-    tool_choice: body.tool_choice,
+    tools: openaiTools,
+    tool_choice: openaiToolChoice,
   }, apiKey);
 
   let resp: Response | null = null;
