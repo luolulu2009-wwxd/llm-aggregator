@@ -53,6 +53,7 @@ export function createOpenAICompatibleAdapter(
           message: {
             role: c.message?.role || "assistant",
             content: c.message?.content || "",
+            ...(c.message?.tool_calls ? { tool_calls: c.message.tool_calls } : {}),
           },
           finish_reason: c.finish_reason || "stop",
         })),

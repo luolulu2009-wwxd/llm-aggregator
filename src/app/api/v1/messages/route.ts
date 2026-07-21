@@ -525,13 +525,30 @@ export async function POST(req: NextRequest) {
     }
 
     const parsed = adapter.parseResponse(data);
+    // Build Anthropic content blocks from OpenAI response
+    const contentBlocks: any[] = [];
+    // Add text block if there's content
+    if (assistantContent) {
+      contentBlocks.push({ type: "text", text: assistantContent });
+    }
+    // Convert OpenAI tool_calls → Anthropic tool_use blocks
+    const toolCalls = parsed.choices?.[0]?.message?.tool_calls;
+    if (toolCalls && Array.isArray(toolCalls)) {
+      for (const tc of toolCalls) {
+        const tcFn = tc.function || {};
+        let input = {};
+        try { input = typeof tcFn.arguments === "string" ? JSON.parse(tcFn.arguments) : (tcFn.arguments || {}); } catch { input = {}; }
+        contentBlocks.push({ type: "tool_use", id: tc.id || `toolu_${Date.now()}`, name: tcFn.name || "", input });
+      }
+    }
+    const stopReason = parsed.choices?.[0]?.finish_reason;
     return Response.json({
       id: `msg_${parsed.id || Date.now()}`,
       type: "message",
       role: "assistant",
-      content: [{ type: "text", text: assistantContent }],
+      content: contentBlocks.length > 0 ? contentBlocks : [{ type: "text", text: "" }],
       model: responseModel,
-      stop_reason: parsed.choices?.[0]?.finish_reason === "stop" ? "end_turn" : "max_tokens",
+      stop_reason: toolCalls?.length > 0 ? "tool_use" : (stopReason === "stop" ? "end_turn" : "max_tokens"),
       stop_sequence: null,
       usage: { input_tokens: usage.prompt_tokens, output_tokens: usage.completion_tokens },
     }, { headers: routeHeaders });

@@ -19,7 +19,7 @@ export interface StandardResponse {
   model: string;
   choices: {
     index: number;
-    message: { role: string; content: string };
+    message: { role: string; content: string; tool_calls?: any[]; };
     finish_reason: string;
   }[];
   usage?: {
