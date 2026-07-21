@@ -77,6 +77,8 @@ export async function POST(req: NextRequest) {
       auth = { userId: apiKey.userId, apiKeyId: apiKey.id };
     } else {
       auth = await validateApiKey(`Bearer ${rawKey}`);
+      // Unknown sk- keys (e.g., user's own DeepSeek/OpenAI key) → passthrough, don't reject
+      if (!auth) auth = { userId: "anon", apiKeyId: "passthrough", isPassthrough: true };
     }
   } else {
     // Non-sk- keys (JWT, custom tokens, direct provider keys) → skip DB lookup
