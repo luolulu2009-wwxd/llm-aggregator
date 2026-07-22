@@ -60,14 +60,21 @@ async function loadRules(): Promise<Rule[]> {
  */
 function keywordMatch(rules: Rule[], message: string): { intent: string; targetModel: string; confidence: number } | null {
   const lower = message.toLowerCase();
+  // Collect ALL matching intents, scored by keyword hit count
+  const matches: { rule: Rule; hits: number }[] = [];
   for (const rule of rules) {
+    let hits = 0;
     for (const kw of rule.keywords) {
-      if (lower.includes(kw.toLowerCase())) {
-        return { intent: rule.intent, targetModel: rule.targetModel, confidence: 0.85 };
-      }
+      if (lower.includes(kw.toLowerCase())) hits++;
     }
+    if (hits > 0) matches.push({ rule, hits });
   }
-  return null;
+  if (matches.length === 0) return null;
+  // Best match: most keyword hits; tie-break by priority
+  matches.sort((a, b) => b.hits - a.hits || b.rule.priority - a.rule.priority);
+  const best = matches[0];
+  const confidence = Math.min(0.95, 0.7 + best.hits * 0.05); // scales with hit count
+  return { intent: best.rule.intent, targetModel: best.rule.targetModel, confidence };
 }
 
 /**
