@@ -245,70 +245,76 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Key pool — cross-provider parallel fallback chain
+  // Key pool — default: aggregator key pool; passthrough: user's own key
   let provider = modelSlug.split("/")[0];
   const modelName = modelSlug.split("/")[1];
-  const modelsFallback = body.models || [];
 
-  // Build candidate list: already-ranked by weight engine in auto mode
-  const tierCandidates = complexity?.candidates || [];
-  const userFallbacks = modelsFallback.length > 0
-    ? modelsFallback.filter((fb: string) => fb !== modelSlug)
-    : [];
-
-  // All candidates to try in parallel (deduplicated, quality order preserved)
-  const seenSlugs = new Set<string>();
-  const allCandidates: string[] = [];
-  const addCandidate = (slug: string) => {
-    if (!seenSlugs.has(slug)) { seenSlugs.add(slug); allCandidates.push(slug); }
-  };
-  addCandidate(modelSlug);
-  for (const fb of [...tierCandidates, ...userFallbacks]) addCandidate(fb);
-  // Always ensure DeepSeek is available as ultimate safety net
-  addCandidate("deepseek/deepseek-v4-pro");
-
-  const keyResults = await Promise.all(
-    allCandidates.map((slug: string) => {
-      const [p, m] = slug.split("/");
-      return selectBestKey(p, m);
-    })
-  );
-  
-  let selectedKey = keyResults[0];
   let effectiveModel = modelSlug;
+  let apiKey: string;
+  let selectedKey: { id: string } | undefined;
+  let adapter = getAdapter(effectiveModel);
+  let finalMessages = openaiMessages;
 
-  // Find first available key across all candidates (respects quality priority ordering)
-  if (!selectedKey) {
-    for (let i = 1; i < allCandidates.length; i++) {
-      if (keyResults[i]) {
-        selectedKey = keyResults[i];
-        effectiveModel = allCandidates[i];
-        routeReason += ` -> fallback:${allCandidates[i].split("/")[0]}`;
-        break;
+  if (auth.isPassthrough) {
+    // ── Passthrough: user's own key, no pool, no billing ──
+    apiKey = rawKey;
+    if (!adapter) {
+      return Response.json({ type: "error", error: { type: "invalid_request_error", message: `Unknown model: ${effectiveModel}` } }, { status: 400 });
+    }
+  } else {
+    // ── Aggregator key pool — cross-provider parallel fallback ──
+    const modelsFallback = body.models || [];
+    const tierCandidates = complexity?.candidates || [];
+    const userFallbacks = modelsFallback.length > 0
+      ? modelsFallback.filter((fb: string) => fb !== modelSlug)
+      : [];
+
+    const seenSlugs = new Set<string>();
+    const allCandidates: string[] = [];
+    const addCandidate = (slug: string) => {
+      if (!seenSlugs.has(slug)) { seenSlugs.add(slug); allCandidates.push(slug); }
+    };
+    addCandidate(modelSlug);
+    for (const fb of [...tierCandidates, ...userFallbacks]) addCandidate(fb);
+    addCandidate("deepseek/deepseek-v4-pro");
+
+    const keyResults = await Promise.all(
+      allCandidates.map((slug: string) => {
+        const [p, m] = slug.split("/");
+        return selectBestKey(p, m);
+      })
+    );
+
+    selectedKey = keyResults[0];
+
+    if (!selectedKey) {
+      for (let i = 1; i < allCandidates.length; i++) {
+        if (keyResults[i]) {
+          selectedKey = keyResults[i];
+          effectiveModel = allCandidates[i];
+          routeReason += ` -> fallback:${allCandidates[i].split("/")[0]}`;
+          break;
+        }
       }
+    }
+
+    if (!selectedKey) {
+      return Response.json({ type: "error", error: { type: "capacity_error", message: "No available keys" } }, { status: 503 });
+    }
+
+    try { apiKey = decrypt(selectedKey.keyEncrypted); } catch {
+      return Response.json({ type: "error", error: { type: "internal_error", message: "Key decryption failed" } }, { status: 500 });
+    }
+
+    // Memory retrieval (async, for registered users)
+    retrieveMemory(userMessage, auth.userId).then(() => {}).catch(() => {});
+
+    if (!adapter) {
+      return Response.json({ type: "error", error: { type: "invalid_request_error", message: `Unknown model: ${effectiveModel}` } }, { status: 400 });
     }
   }
 
-  if (!selectedKey) {
-    return Response.json({ type: "error", error: { type: "capacity_error", message: "No available keys" } }, { status: 503 });
-  }
-
-  // Memory retrieval — async fire-and-forget (doesn't block response)
-  let finalMessages = openaiMessages;
-  retrieveMemory(userMessage, auth.userId).then(ctx => {
-    // memory loaded async, used for next request
-  }).catch(() => {});
-
-    let apiKey: string;
-  try { apiKey = decrypt(selectedKey.keyEncrypted); } catch {
-    return Response.json({ type: "error", error: { type: "internal_error", message: "Key decryption failed" } }, { status: 500 });
-  }
-
-  let adapter = getAdapter(effectiveModel);
-  if (!adapter) {
-    return Response.json({ type: "error", error: { type: "invalid_request_error", message: `Unknown model: ${effectiveModel}` } }, { status: 400 });
-  }
-  // Build + fetch upstream (with circuit breaker, timeout, auto-fallback)
+  // Build + fetch upstream
   const built = adapter.buildRequest({
     model: effectiveModel.split("/")[1],
     messages: finalMessages,
@@ -373,7 +379,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Fallback: try remaining candidates (cross-provider ordered list)
-  if (!resp) {
+  // Passthrough: no fallback — user's key works with one provider only
+  if (!resp && !auth.isPassthrough) {
     // Find the primary's index and try each remaining candidate
     const primaryIdx = allCandidates.indexOf(modelSlug);
     for (let fi = primaryIdx + 1; fi < allCandidates.length; fi++) {
