@@ -2,6 +2,11 @@
 const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
+  // Claude Code can send 100KB+ system prompts with tool definitions
+  serverExternalPackages: [],
+  experimental: {
+    serverActions: { bodySizeLimit: "2mb" },
+  },
 
   // Anthropic API compatible paths for Claude Code
   async rewrites() {
