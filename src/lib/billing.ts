@@ -57,8 +57,16 @@ export async function recordUsage(input: {
     const providerCostRaw = inputPrice * input.promptTokens + outputPrice * input.completionTokens;
     const providerCost = Math.round(providerCostRaw * 1e8) / 1e8;
 
-    // User cost (provider cost × 1.3)
-    const userCost = Math.round(providerCost * PRICE_MULTIPLIER * 1e8) / 1e8;
+    // Check if user is using their OWN key → cost price (1.0x), not pool markup (1.3x)
+    const pk = await prisma.providerKey.findUnique({
+      where: { id: input.providerKeyId },
+      select: { userId: true },
+    });
+    const isSelfKey = pk?.userId === input.userId;
+
+    // User cost: 1.0x for own key, 1.3x for pool key
+    const multiplier = isSelfKey ? 1.0 : PRICE_MULTIPLIER;
+    const userCost = Math.round(providerCost * multiplier * 1e8) / 1e8;
 
     await prisma.$transaction(async (tx) => {
       // 1. Deduct user credits at 1.3x markup
@@ -92,7 +100,7 @@ export async function recordUsage(input: {
           userId: input.userId,
           amount: -userCost,
           type: "deduct",
-          description: `${input.modelSlug}: ${input.promptTokens}+${input.completionTokens} tokens | provider: ¥${providerCost} × ${PRICE_MULTIPLIER} = ¥${userCost}`,
+          description: `${input.modelSlug}: ${input.promptTokens}+${input.completionTokens} tokens | provider: ¥${providerCost} × ${multiplier} = ¥${userCost}${isSelfKey ? " (self)" : ""}`,
           balanceAfter: user.creditBalance,
         },
       });
