@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
 
   if (!selectedKey && keyResults[keyResults.length - 1]) {
     selectedKey = keyResults[keyResults.length - 1];
-    effectiveModel = "deepseek/deepseek-chat";
+    effectiveModel = "deepseek/deepseek-v4-pro";
     routeReason += " → fallback:deepseek";
   }
 

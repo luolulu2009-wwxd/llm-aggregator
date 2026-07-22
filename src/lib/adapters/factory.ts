@@ -13,7 +13,7 @@ function register(adapter: Adapter) {
 const externalProxy = process.env.ANTHROPIC_PROXY || undefined;
 
 // ── OpenAI-compatible providers ──
-register(createOpenAICompatibleAdapter("deepseek", "https://api.deepseek.com/v1", "deepseek-chat"));
+register(createOpenAICompatibleAdapter("deepseek", "https://api.deepseek.com/v1", "deepseek-v4-pro"));
 register(createOpenAICompatibleAdapter("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus"));
 register(createOpenAICompatibleAdapter("glm", "https://open.bigmodel.cn/api/paas/v4", "glm-4-flash"));
 register(createOpenAICompatibleAdapter("moonshot", "https://api.moonshot.cn/v1", "moonshot-v1-8k"));

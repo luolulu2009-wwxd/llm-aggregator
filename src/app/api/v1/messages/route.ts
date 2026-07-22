@@ -265,7 +265,7 @@ export async function POST(req: NextRequest) {
   addCandidate(modelSlug);
   for (const fb of [...tierCandidates, ...userFallbacks]) addCandidate(fb);
   // Always ensure DeepSeek is available as ultimate safety net
-  addCandidate("deepseek/deepseek-chat");
+  addCandidate("deepseek/deepseek-v4-pro");
 
   const keyResults = await Promise.all(
     allCandidates.map((slug: string) => {
