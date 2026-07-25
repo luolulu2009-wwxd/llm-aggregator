@@ -327,6 +327,7 @@ export async function POST(req: NextRequest) {
     stream: isStreaming,
     tools: openaiTools,
     tool_choice: openaiToolChoice,
+    thinking: body.thinking,
   }, apiKey);
 
   let resp: Response | null = null;
@@ -404,6 +405,7 @@ export async function POST(req: NextRequest) {
             stream: isStreaming,
             tools: openaiTools,
             tool_choice: openaiToolChoice,
+            thinking: body.thinking,
           }, fbApiKey);
 
           try {
