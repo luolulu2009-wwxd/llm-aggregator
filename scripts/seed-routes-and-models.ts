@@ -15,11 +15,11 @@ async function main() {
 
   // ── 1. 更新 RouteRules → Anthropic 模型 ──
   const routeUpdates = [
-    { intent: "code",       targetModel: "anthropic/claude-sonnet-5", priority: 10, keywords: "代码,函数,bug,算法,实现,编程,import,class,function,code,fix,implement,typescript,python,rust,react,组件" },
-    { intent: "reasoning",  targetModel: "anthropic/claude-opus-4-8", priority: 10, keywords: "推理,分析,逻辑,思考,为什么,how to,数学,证明,论证" },
-    { intent: "translate",  targetModel: "anthropic/claude-haiku-4-5-20251001", priority: 10, keywords: "翻译,translate,英文,中文,日语,法语,德语,译文" },
-    { intent: "summary",    targetModel: "anthropic/claude-haiku-4-5-20251001", priority: 10, keywords: "总结,摘要,概括,summarize,tldr,归纳,提炼" },
-    { intent: "creative",   targetModel: "anthropic/claude-sonnet-5", priority: 10, keywords: "故事,写文章,剧本,创意,角色扮演,小说,诗歌,文案,广告语" },
+    { intent: "code",       targetModel: "openrouter/claude-sonnet-5", priority: 10, keywords: "代码,函数,bug,算法,实现,编程,import,class,function,code,fix,implement,typescript,python,rust,react,组件" },
+    { intent: "reasoning",  targetModel: "openrouter/claude-opus-4-8", priority: 10, keywords: "推理,分析,逻辑,思考,为什么,how to,数学,证明,论证" },
+    { intent: "translate",  targetModel: "openrouter/claude-haiku-4-5", priority: 10, keywords: "翻译,translate,英文,中文,日语,法语,德语,译文" },
+    { intent: "summary",    targetModel: "openrouter/claude-haiku-4-5", priority: 10, keywords: "总结,摘要,概括,summarize,tldr,归纳,提炼" },
+    { intent: "creative",   targetModel: "openrouter/claude-sonnet-5", priority: 10, keywords: "故事,写文章,剧本,创意,角色扮演,小说,诗歌,文案,广告语" },
   ];
 
   for (const r of routeUpdates) {
