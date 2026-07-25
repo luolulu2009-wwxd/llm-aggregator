@@ -8,11 +8,11 @@
 import { prisma } from "./prisma";
 
 const FALLBACK_RULES = [
-  { intent: "code", keywords: "代码,函数,bug,算法,实现,编程,import,class,function,code,fix,implement,typescript,python,rust,react,组件", targetModel: "openrouter/claude-sonnet-5", priority: 10 },
-  { intent: "translate", keywords: "翻译,translate,英文,中文,日语,法语,德语,译文", targetModel: "deepseek/deepseek-v4-pro", priority: 10 },
-  { intent: "summary", keywords: "总结,摘要,概括,summarize,tldr,归纳,提炼", targetModel: "deepseek/deepseek-v4-pro", priority: 10 },
-  { intent: "creative", keywords: "故事,写文章,剧本,创意,角色扮演,小说,诗歌,文案,广告语", targetModel: "openrouter/claude-sonnet-5", priority: 10 },
-  { intent: "reasoning", keywords: "推理,分析,逻辑,思考,为什么,how to,数学,证明,论证", targetModel: "openrouter/claude-sonnet-5", priority: 10 },
+  { intent: "code", keywords: "代码,函数,bug,算法,实现,编程,import,class,function,code,fix,implement,typescript,python,rust,react,组件", targetModel: "openrouter/claude-sonnet-5", priority: 10, candidates: ["openrouter/claude-sonnet-5", "deepseek/deepseek-v4-pro", "moonshot/kimi-k3", "openrouter/gpt-5"] },
+  { intent: "translate", keywords: "翻译,translate,英文,中文,日语,法语,德语,译文", targetModel: "deepseek/deepseek-v4-pro", priority: 10, candidates: ["deepseek/deepseek-v4-pro", "openrouter/claude-haiku-4-5", "glm/glm-5.1"] },
+  { intent: "summary", keywords: "总结,摘要,概括,summarize,tldr,归纳,提炼", targetModel: "deepseek/deepseek-v4-pro", priority: 10, candidates: ["deepseek/deepseek-v4-pro", "openrouter/claude-haiku-4-5", "moonshot/kimi-k3"] },
+  { intent: "creative", keywords: "故事,写文章,剧本,创意,角色扮演,小说,诗歌,文案,广告语", targetModel: "openrouter/claude-sonnet-5", priority: 10, candidates: ["openrouter/claude-sonnet-5", "moonshot/kimi-k3", "qwen/qwen-max-latest"] },
+  { intent: "reasoning", keywords: "推理,分析,逻辑,思考,为什么,how to,数学,证明,论证", targetModel: "openrouter/claude-sonnet-5", priority: 10, candidates: ["openrouter/claude-opus-4-8", "openrouter/claude-sonnet-5", "deepseek/deepseek-v4-pro", "moonshot/kimi-k3"] },
 ];
 
 interface Rule {
@@ -20,6 +20,7 @@ interface Rule {
   keywords: string[];
   targetModel: string;
   priority: number;
+  candidates?: string[];   // pool of models for weight engine to rank
   embedding?: number[] | null;
 }
 
@@ -58,7 +59,7 @@ async function loadRules(): Promise<Rule[]> {
 /**
  * Keyword match — returns the first rule whose keywords match the message.
  */
-function keywordMatch(rules: Rule[], message: string): { intent: string; targetModel: string; confidence: number } | null {
+function keywordMatch(rules: Rule[], message: string): { intent: string; targetModel: string; candidates: string[]; confidence: number } | null {
   const lower = message.toLowerCase();
   // Collect ALL matching intents, scored by keyword hit count
   const matches: { rule: Rule; hits: number }[] = [];
@@ -74,7 +75,7 @@ function keywordMatch(rules: Rule[], message: string): { intent: string; targetM
   matches.sort((a, b) => b.hits - a.hits || b.rule.priority - a.rule.priority);
   const best = matches[0];
   const confidence = Math.min(0.95, 0.7 + best.hits * 0.05); // scales with hit count
-  return { intent: best.rule.intent, targetModel: best.rule.targetModel, confidence };
+  return { intent: best.rule.intent, targetModel: best.rule.targetModel, candidates: best.rule.candidates || [best.rule.targetModel], confidence };
 }
 
 /**
@@ -163,7 +164,7 @@ async function loadRuleEmbeddings(): Promise<Map<string, number[]>> {
 export async function classifyPrompt(
   userMessage: string,
   queryEmbedding?: number[] | null,
-): Promise<{ intent: string; targetModel: string; confidence: number } | null> {
+): Promise<{ intent: string; targetModel: string; candidates: string[]; confidence: number } | null> {
   const rules = await loadRules();
   if (rules.length === 0) return null;
 

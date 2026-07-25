@@ -230,8 +230,16 @@ export async function POST(req: NextRequest) {
     // Smart routing: intent match → complexity-based tiered selection
     const classification = await classifyPrompt(userMessage, null);
     if (classification) {
-      modelSlug = classification.targetModel;
-      routeReason = `rule:${classification.intent}`;
+      // Intent matched — weight engine ranks the candidate pool for this intent
+      const lang = /[一-鿿]/.test(userMessage.slice(0,50)) ? "zh" : "en";
+      const ranked = rankCandidates(classification.candidates, 2/*moderate*/, lang);
+      modelSlug = ranked[0];
+      // Use ranked candidates for fallback chain
+      complexity = {
+        candidates: ranked,
+        primaryModel: ranked[0],
+      } as any;
+      routeReason = `rule:${classification.intent}(c${classification.confidence.toFixed(2)})`;
     } else {
       // Cost-optimal: score message complexity → weight engine picks the best model
       const convLen = openaiMessages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
