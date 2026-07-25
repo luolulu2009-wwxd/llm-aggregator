@@ -8,6 +8,7 @@
 TUNNEL_PORT=18443
 TARGET="openrouter.ai:443"
 PROXY_HOST="74.211.99.26"
+PROXY_PORT=22222
 MAX_FAILS=3
 FAIL_COUNT=0
 
@@ -23,7 +24,7 @@ restart_tunnel() {
     log "Restarting tunnel..."
     fuser -k ${TUNNEL_PORT}/tcp 2>/dev/null
     sleep 1
-    ssh -f -N -L ${TUNNEL_PORT}:${TARGET} root@${PROXY_HOST} \
+    ssh -f -N -L ${TUNNEL_PORT}:${TARGET} -p ${PROXY_PORT} root@${PROXY_HOST} \
         -o StrictHostKeyChecking=no \
         -o ServerAliveInterval=30 \
         -o ServerAliveCountMax=2 \
