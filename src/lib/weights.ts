@@ -65,8 +65,10 @@ function scoreCandidate(
   slug: string,
   tier: number,
   language: string,
+  intent?: string,
 ): number {
-  const snap = getSnapshot(slug, tier, language);
+  const snap = getSnapshot(slug, tier, language, intent)
+    || (intent ? getSnapshot(slug, tier, language) : null); // fallback to general metrics
   const price = PRICE[slug] || 0.01;
   const curated = getCuratedScore(slug);
 
@@ -96,11 +98,12 @@ export function rankCandidates(
   candidates: string[],
   tier: number,
   language: string,
+  intent?: string,
 ): string[] {
   if (candidates.length <= 1) return candidates;
 
-  // Score + sort
-  const scored = candidates.map(slug => ({ slug, score: scoreCandidate(slug, tier, language) }));
+  // Score + sort — intent-aware metrics when available
+  const scored = candidates.map(slug => ({ slug, score: scoreCandidate(slug, tier, language, intent) }));
   scored.sort((a, b) => b.score - a.score);
 
   // ε-greedy: 2% chance to promote a random candidate to #1 for exploration

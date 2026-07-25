@@ -24,13 +24,13 @@ interface MetricsBucket {
   lastUsedAt: number;
 }
 
-// Key: "modelSlug|tier|lang"
+// Key: "modelSlug|tier|lang|intent"
 const buckets = new Map<string, MetricsBucket>();
 const REDIS_KEY = "metrics:routing";
 let lastFlush = 0;
 
-function key(modelSlug: string, tier: number, language: string): string {
-  return `${modelSlug}|${tier}|${language}`;
+function key(modelSlug: string, tier: number, language: string, intent?: string): string {
+  return `${modelSlug}|${tier}|${language}|${intent || "auto"}`;
 }
 
 // ── Redis persistence ──
@@ -85,7 +85,7 @@ setInterval(() => {
   }
 }, 30_000).unref();
 
-/** Record a successful call */
+/** Record a successful call — writes both general and intent-specific metrics */
 export function recordSuccess(
   modelSlug: string,
   tier: number,
@@ -93,36 +93,40 @@ export function recordSuccess(
   latencyMs: number,
   outputTokens: number,
   contentLength: number,
+  intent?: string,
 ): void {
-  const k = key(modelSlug, tier, language);
-  const b = buckets.get(k) || { calls: 0, successes: 0, empties: 0, totalLatency: 0, totalTokens: 0, lastUsedAt: 0 };
-  b.calls++;
-  b.successes++;
-  b.totalLatency += latencyMs;
-  b.totalTokens += outputTokens;
-  b.lastUsedAt = Date.now();
-  if (contentLength === 0) b.empties++;
-  buckets.set(k, b);
+  for (const k of [key(modelSlug, tier, language), ...(intent ? [key(modelSlug, tier, language, intent)] : [])]) {
+    const b = buckets.get(k) || { calls: 0, successes: 0, empties: 0, totalLatency: 0, totalTokens: 0, lastUsedAt: 0 };
+    b.calls++;
+    b.successes++;
+    b.totalLatency += latencyMs;
+    b.totalTokens += outputTokens;
+    b.lastUsedAt = Date.now();
+    if (contentLength === 0) b.empties++;
+    buckets.set(k, b);
+  }
 }
 
-/** Record a failed/timed-out call */
+/** Record a failed/timed-out call — writes both general and intent-specific metrics */
 export function recordFailure(
   modelSlug: string,
   tier: number,
   language: string,
   latencyMs: number,
+  intent?: string,
 ): void {
-  const k = key(modelSlug, tier, language);
-  const b = buckets.get(k) || { calls: 0, successes: 0, empties: 0, totalLatency: 0, totalTokens: 0, lastUsedAt: 0 };
-  b.calls++;
-  b.totalLatency += latencyMs;
-  b.lastUsedAt = Date.now();
-  buckets.set(k, b);
+  for (const k of [key(modelSlug, tier, language), ...(intent ? [key(modelSlug, tier, language, intent)] : [])]) {
+    const b = buckets.get(k) || { calls: 0, successes: 0, empties: 0, totalLatency: 0, totalTokens: 0, lastUsedAt: 0 };
+    b.calls++;
+    b.totalLatency += latencyMs;
+    b.lastUsedAt = Date.now();
+    buckets.set(k, b);
+  }
 }
 
 /** Get snapshot for a specific model+tier+lang */
-export function getSnapshot(modelSlug: string, tier: number, language: string): MetricSnapshot | null {
-  const k = key(modelSlug, tier, language);
+export function getSnapshot(modelSlug: string, tier: number, language: string, intent?: string): MetricSnapshot | null {
+  const k = key(modelSlug, tier, language, intent);
   const b = buckets.get(k);
   if (!b || b.calls === 0) return null;
   return {

@@ -223,6 +223,7 @@ export async function POST(req: NextRequest) {
   let costTier: string | undefined;
   let complexity: ReturnType<typeof classifyComplexity> | undefined;
 
+  let intentTag: string | undefined; // for intent-specific metrics
   if (requestedModel && requestedModel !== "auto") {
     modelSlug = requestedModel;
     routeReason = "manual";
@@ -231,8 +232,9 @@ export async function POST(req: NextRequest) {
     const classification = await classifyPrompt(userMessage, null);
     if (classification) {
       // Intent matched — weight engine ranks the candidate pool for this intent
+      intentTag = classification.intent;
       const lang = /[一-鿿]/.test(userMessage.slice(0,50)) ? "zh" : "en";
-      const ranked = rankCandidates(classification.candidates, 2/*moderate*/, lang);
+      const ranked = rankCandidates(classification.candidates, 2/*moderate*/, lang, intentTag);
       modelSlug = ranked[0];
       // Use ranked candidates for fallback chain
       complexity = {
@@ -384,7 +386,7 @@ export async function POST(req: NextRequest) {
     } catch (err: any) {
       circuit.recordFailure();
       console.warn(`[fetch] ${provider} error:`, err?.name, err?.message, err?.cause || "");
-      if (complexity) recordFailure(effectiveModel, complexity.tier, complexity.language, fetchLatency);
+      if (complexity) recordFailure(effectiveModel, complexity.tier, complexity.language, fetchLatency, intentTag);
       resp = null;
     }
   }
@@ -514,7 +516,7 @@ export async function POST(req: NextRequest) {
     }
     // Record quality signal for self-evolving routing
     if (complexity) {
-      recordSuccess(effectiveModel, complexity.tier, complexity.language, fetchLatency, usage.completion_tokens || 0, assistantContent.length);
+      recordSuccess(effectiveModel, complexity.tier, complexity.language, fetchLatency, usage.completion_tokens || 0, assistantContent.length, intentTag);
     }
     // Debug trace: record this request for the debug panel
     addTrace({
