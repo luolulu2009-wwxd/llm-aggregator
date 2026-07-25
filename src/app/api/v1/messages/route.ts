@@ -254,6 +254,8 @@ export async function POST(req: NextRequest) {
   let selectedKey: { id: string } | undefined;
   let adapter = getAdapter(effectiveModel);
   let finalMessages = openaiMessages;
+  let allCandidates: string[] = [];
+  let keyResults: (Awaited<ReturnType<typeof selectBestKey>>)[] = [];
 
   if (auth.isPassthrough) {
     // ── Passthrough: user's own key, no pool, no billing ──
@@ -270,7 +272,7 @@ export async function POST(req: NextRequest) {
       : [];
 
     const seenSlugs = new Set<string>();
-    const allCandidates: string[] = [];
+    allCandidates = [];
     const addCandidate = (slug: string) => {
       if (!seenSlugs.has(slug)) { seenSlugs.add(slug); allCandidates.push(slug); }
     };
@@ -278,7 +280,7 @@ export async function POST(req: NextRequest) {
     for (const fb of [...tierCandidates, ...userFallbacks]) addCandidate(fb);
     addCandidate("deepseek/deepseek-v4-pro");
 
-    const keyResults = await Promise.all(
+    keyResults = await Promise.all(
       allCandidates.map((slug: string) => {
         const [p, m] = slug.split("/");
         return selectBestKey(p, m);
