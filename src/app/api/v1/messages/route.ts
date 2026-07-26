@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
         ? userMessages[userMessages.length - 1].content
         : (userMessages[userMessages.length - 1].content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n"))
     : "";
-  body.tools = selectTools(body.tools, lastUserMsg, body.messages || [], undefined) || body.tools;
+  body.tools = (await selectTools(body.tools, lastUserMsg, body.messages || [], undefined)) || body.tools;
   // Trim massive system prompt (Claude Code sends 100KB+ of MCP instructions)
   const MAX_SYSTEM_CHARS = 50000;
   if (typeof body.system === "string" && body.system.length > MAX_SYSTEM_CHARS) {

@@ -1,11 +1,9 @@
 /**
  * Smart Tool Selector — AI-native, self-evolving.
  *
- * Instead of truncating tools blindly, selects only the tools that
- * are relevant to the user's current request + conversation context.
- *
- * Cold start: keyword matching between user message and tool descriptions.
- * Warm state: intent-based prediction from actual usage data.
+ * Semantic matching: embeds user message + tool descriptions, cosine similarity.
+ * Falls back to keyword matching if embedding service is unavailable.
+ * Self-evolving: records actual tool usage per intent, builds heatmap.
  *
  * Always keeps core tools (read, write, search, bash) regardless.
  */
@@ -25,63 +23,79 @@ const INTENT_TOOL_SEED: Record<string, string[]> = {
 
 // Live heatmap — updated as tools are actually used
 const intentToolHeatmap = new Map<string, Map<string, number>>();
-
-// Initialize seed
 for (const [intent, tools] of Object.entries(INTENT_TOOL_SEED)) {
   const map = new Map<string, number>();
-  for (const t of tools) map.set(t, 5); // seed count = 5
+  for (const t of tools) map.set(t, 5);
   intentToolHeatmap.set(intent, map);
 }
 
-/** Score a tool against the user message (keyword match) */
-function relevanceScore(tool: any, message: string, usedNames: Set<string>): number {
-  // Already used in this conversation → always keep
+// ── Semantic matching via embedding ──
+let getEmbeddingFn: ((text: string) => Promise<number[] | null>) | null = null;
+
+async function getEmbedding(text: string): Promise<number[] | null> {
+  if (!getEmbeddingFn) {
+    try {
+      const mod = await import("./embedding");
+      getEmbeddingFn = mod.getQueryEmbedding;
+    } catch { getEmbeddingFn = () => Promise.resolve(null); }
+  }
+  return getEmbeddingFn(text);
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+function buildToolDescription(tool: any): string {
+  const name = (tool.name || tool.function?.name || "").replace(/[_-]/g, " ");
+  const desc = tool.description || tool.function?.description || "";
+  return `${name}: ${desc}`.trim();
+}
+
+/** Score a tool against the user message (keyword match fallback) */
+function keywordScore(tool: any, message: string, usedNames: Set<string>): number {
   if (usedNames.has(tool.name)) return 1000;
 
   let score = 0;
   const lower = message.toLowerCase();
   const name = (tool.name || "").toLowerCase();
-  const desc = (tool.description || tool.function?.description || "").toLowerCase();
+  const desc = buildToolDescription(tool).toLowerCase();
 
-  // Name match (high weight)
-  const nameWords = name.split(/[_-]/);
-  for (const w of nameWords) {
+  for (const w of name.split(/[_-]/)) {
     if (w.length > 2 && lower.includes(w)) score += 10;
   }
-
-  // Description match
-  const descWords = desc.split(/\s+/).filter((w: string) => w.length > 3);
-  for (const w of descWords) {
-    if (lower.includes(w)) score += 2;
+  for (const w of desc.split(/\s+/)) {
+    if (w.length > 3 && lower.includes(w)) score += 2;
   }
-
-  // Core tool bonus
   for (const pat of CORE_TOOL_PATTERNS) {
     if (pat.test(name)) { score += 5; break; }
   }
-
   return score;
 }
 
 /** Score by intent heatmap */
 function intentScore(toolName: string, intent: string): number {
-  const heatmap = intentToolHeatmap.get(intent);
-  return heatmap?.get(toolName) || 0;
+  return intentToolHeatmap.get(intent)?.get(toolName) || 0;
 }
 
 /**
- * Select relevant tools for the current request.
- * Returns trimmed tool list (max MAX_TOOLS), sorted by relevance.
+ * Select relevant tools — semantic matching if embedding available, keyword fallback.
  */
-export function selectTools(
+export async function selectTools(
   tools: any[] | undefined,
   userMessage: string,
   conversationMessages: any[],
   intent?: string,
-): any[] | undefined {
+): Promise<any[] | undefined> {
   if (!tools || tools.length <= MAX_TOOLS) return tools;
 
-  // Collect tools already used in this conversation
   const usedNames = new Set<string>();
   for (const m of conversationMessages) {
     const content = Array.isArray(m.content) ? m.content : [m];
@@ -90,19 +104,40 @@ export function selectTools(
     }
   }
 
-  // Score each tool
-  const scored = tools.map(t => ({
-    tool: t,
-    score: relevanceScore(t, userMessage, usedNames)
-      + (intent ? intentScore(t.name, intent) : 0),
-  }));
+  // Try semantic matching first
+  const msgEmbedding = userMessage.length > 5 ? await getEmbedding(userMessage).catch(() => null) : null;
 
-  // Sort: highest score first
+  const scored: { tool: any; score: number }[] = [];
+
+  if (msgEmbedding && msgEmbedding.length > 0) {
+    // Semantic: embed each tool description, compute cosine similarity
+    const toolDescs = tools.map(t => buildToolDescription(t));
+    const descEmbeddings = await Promise.all(
+      toolDescs.map(d => d ? getEmbedding(d).catch(() => null) : null)
+    );
+
+    for (let i = 0; i < tools.length; i++) {
+      let score = 0;
+      // Conversation-used → always keep
+      if (usedNames.has(tools[i].name)) {
+        score = 1000;
+      } else if (descEmbeddings[i] && descEmbeddings[i]!.length > 0) {
+        score = cosineSimilarity(msgEmbedding, descEmbeddings[i]!) * 100;
+      } else {
+        score = keywordScore(tools[i], userMessage, new Set()); // fallback for this tool
+      }
+      if (intent) score += intentScore(tools[i].name, intent) * 2;
+      scored.push({ tool: tools[i], score: Math.round(score) });
+    }
+  } else {
+    // Fallback: keyword matching
+    for (const t of tools) {
+      scored.push({ tool: t, score: keywordScore(t, userMessage, usedNames) + (intent ? intentScore(t.name, intent) * 2 : 0) });
+    }
+  }
+
   scored.sort((a, b) => b.score - a.score);
-
-  // Always keep conversation-used tools (score >= 1000), fill rest with best matches
-  const selected = scored.filter(s => s.score > 0).slice(0, MAX_TOOLS);
-  return selected.map(s => s.tool);
+  return scored.filter(s => s.score > 0).slice(0, MAX_TOOLS).map(s => s.tool);
 }
 
 /**
