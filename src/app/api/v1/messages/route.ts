@@ -14,6 +14,8 @@ import { classifyComplexity, costSavings } from "@/lib/classifier";
 import { rankCandidates } from "@/lib/weights";
 import { recordSuccess, recordFailure, loadFromRedis } from "@/lib/metrics";
 import { selectTools, recordToolUsage } from "@/lib/tool-selector";
+import { observeToolUsage } from "@/lib/agent/tool-agent";
+import { startAgents } from "@/lib/agent/scheduler";
 
 // Load persisted metrics on first request
 let metricsLoaded = false;
@@ -55,6 +57,7 @@ function mapModel(anthropicModel: string | undefined): string {
 export async function POST(req: NextRequest) {
   if (!redisReady) { await getRedis(); redisReady = true; }
   if (!metricsLoaded) { loadFromRedis().then(() => { metricsLoaded = true; }).catch(() => {}); }
+  startAgents(); // 🤖 Endogenous AI agents — auto-evolve routing + tool pool
 
   // Auth — support aggregator keys (sk-), OAuth (sk-ant-), and passthrough (non-sk- keys)
   const rawKey = req.headers.get("x-api-key") || req.headers.get("authorization")?.replace(/^Bearer /, "") || null;
@@ -592,8 +595,9 @@ export async function POST(req: NextRequest) {
         usedNames.push(name);
         contentBlocks.push({ type: "tool_use", id: tc.id || `toolu_${Date.now()}`, name, input });
       }
-      // Self-evolving tool selector: learn which tools are used for this intent
+      // Self-evolving: tool selector learning + agent observation
       recordToolUsage(intentTag, usedNames);
+      for (const n of usedNames) observeToolUsage(n, true);
     }
     const stopReason = parsed.choices?.[0]?.finish_reason;
     return Response.json({
