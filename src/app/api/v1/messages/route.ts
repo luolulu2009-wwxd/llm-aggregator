@@ -89,8 +89,39 @@ export async function POST(req: NextRequest) {
     return Response.json({ type: "error", error: { type: "authentication_error", message: "Invalid API key. Get one at llm.saylulu.com/register" } }, { status: 401 });
   }
 
-  const body = await req.json();
+  // Use raw text parsing to bypass Next.js body size limit (Claude Code sends 10MB+)
+  const bodyText = await req.text();
+  let body: any;
+  try { body = JSON.parse(bodyText); } catch {
+    return Response.json({ type: "error", error: { type: "invalid_request_error", message: "Invalid JSON" } }, { status: 400 });
+  }
   const isStreaming = body.stream === true;
+
+  // ── Trim excessive tools/system — Claude Code MCP sends 100+ tools costing ¥50+/request ──
+  const MAX_TOOLS = 30;
+  const MAX_SYSTEM_CHARS = 50000;
+  if (body.tools && body.tools.length > MAX_TOOLS) {
+    // Keep tools referenced in conversation history, fill remaining with first N
+    const usedNames = new Set<string>();
+    for (const m of (body.messages || [])) {
+      const content = Array.isArray(m.content) ? m.content : [m];
+      for (const b of content) {
+        if (b?.type === "tool_use" && b.name) usedNames.add(b.name);
+        if (b?.type === "tool_result") { /* tool_result uses tool_use_id, not name */ }
+      }
+    }
+    const priority: any[] = [];
+    const rest: any[] = [];
+    for (const t of body.tools) {
+      if (usedNames.has(t.name)) priority.push(t);
+      else rest.push(t);
+    }
+    body.tools = [...priority, ...rest].slice(0, MAX_TOOLS);
+  }
+  // Trim massive system prompt (Claude Code sends 100KB+ of MCP instructions)
+  if (typeof body.system === "string" && body.system.length > MAX_SYSTEM_CHARS) {
+    body.system = body.system.slice(0, MAX_SYSTEM_CHARS) + "\n\n[system prompt truncated by aggregator — original length: " + body.system.length + " chars]";
+  }
 
   // Convert Anthropic tools → OpenAI tools format
   // Anthropic: {name, description, input_schema}
@@ -195,8 +226,10 @@ export async function POST(req: NextRequest) {
   const rateLimitReset = rateCheck.resetInSeconds?.toString();
 
   // --- Balance pre-check (skip for passthrough) ---
+  let currentBalance: number | undefined;
   if (!auth.isPassthrough) {
     const balanceCheck = await checkBalance(auth.userId);
+    currentBalance = balanceCheck.balance;
     if (!balanceCheck.sufficient) {
       return Response.json({
         type: "error",
@@ -204,7 +237,7 @@ export async function POST(req: NextRequest) {
           type: "insufficient_balance",
           message: `Insufficient credits. Balance: ¥${balanceCheck.balance.toFixed(4)}, minimum: ¥${balanceCheck.minimum.toFixed(4)}`,
         },
-      }, { status: 402, headers: { "X-Balance": balanceCheck.balance.toString() } });
+      }, { status: 402, headers: { "X-Balance": balanceCheck.balance.toString(), "X-Balance-Warning": "low" } });
     }
   }
 
@@ -460,6 +493,10 @@ export async function POST(req: NextRequest) {
     "X-Route-Reason": routeReason,
     "X-Effective-Model": effectiveModel,
   };
+  if (currentBalance !== undefined) {
+    routeHeaders["X-Balance"] = currentBalance.toFixed(4);
+    if (currentBalance < 1.0) routeHeaders["X-Balance-Warning"] = "low";
+  }
   if (rateLimitRemaining) {
     routeHeaders["X-RateLimit-Remaining"] = rateLimitRemaining;
     routeHeaders["X-RateLimit-Limit"] = rateLimitTotal!;

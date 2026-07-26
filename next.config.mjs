@@ -2,11 +2,8 @@
 const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
-  // Claude Code can send 100KB+ system prompts with tool definitions
-  serverExternalPackages: [],
-  experimental: {
-    serverActions: { bodySizeLimit: "2mb" },
-  },
+  // Claude Code sends 10MB+ bodies (MCP tool definitions + large system prompts)
+  maxBodySize: "50mb",
 
   // Anthropic API compatible paths for Claude Code
   async rewrites() {
