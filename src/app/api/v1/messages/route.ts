@@ -13,6 +13,7 @@ import { classifyPrompt, DEFAULT_MODEL } from "@/lib/router";
 import { classifyComplexity, costSavings } from "@/lib/classifier";
 import { rankCandidates } from "@/lib/weights";
 import { recordSuccess, recordFailure, loadFromRedis } from "@/lib/metrics";
+import { selectTools, recordToolUsage } from "@/lib/tool-selector";
 
 // Load persisted metrics on first request
 let metricsLoaded = false;
@@ -97,30 +98,19 @@ export async function POST(req: NextRequest) {
   }
   const isStreaming = body.stream === true;
 
-  // ── Trim excessive tools/system — Claude Code MCP sends 100+ tools costing ¥50+/request ──
-  const MAX_TOOLS = 30;
-  const MAX_SYSTEM_CHARS = 50000;
-  if (body.tools && body.tools.length > MAX_TOOLS) {
-    // Keep tools referenced in conversation history, fill remaining with first N
-    const usedNames = new Set<string>();
-    for (const m of (body.messages || [])) {
-      const content = Array.isArray(m.content) ? m.content : [m];
-      for (const b of content) {
-        if (b?.type === "tool_use" && b.name) usedNames.add(b.name);
-        if (b?.type === "tool_result") { /* tool_result uses tool_use_id, not name */ }
-      }
-    }
-    const priority: any[] = [];
-    const rest: any[] = [];
-    for (const t of body.tools) {
-      if (usedNames.has(t.name)) priority.push(t);
-      else rest.push(t);
-    }
-    body.tools = [...priority, ...rest].slice(0, MAX_TOOLS);
-  }
+  // ── Smart tool selection — AI-native, self-evolving ──
+  // Don't blindly truncate. Match user intent to tool descriptions, keep only relevant ones.
+  const userMessages = (body.messages || []).filter((m: any) => m.role === "user");
+  const lastUserMsg = userMessages.length > 0
+    ? (typeof userMessages[userMessages.length - 1].content === "string"
+        ? userMessages[userMessages.length - 1].content
+        : (userMessages[userMessages.length - 1].content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n"))
+    : "";
+  body.tools = selectTools(body.tools, lastUserMsg, body.messages || [], undefined) || body.tools;
   // Trim massive system prompt (Claude Code sends 100KB+ of MCP instructions)
+  const MAX_SYSTEM_CHARS = 50000;
   if (typeof body.system === "string" && body.system.length > MAX_SYSTEM_CHARS) {
-    body.system = body.system.slice(0, MAX_SYSTEM_CHARS) + "\n\n[system prompt truncated by aggregator — original length: " + body.system.length + " chars]";
+    body.system = body.system.slice(0, MAX_SYSTEM_CHARS) + "\n\n[system prompt trimmed — original: " + body.system.length + " chars]";
   }
 
   // Convert Anthropic tools → OpenAI tools format
@@ -593,12 +583,17 @@ export async function POST(req: NextRequest) {
     // Convert OpenAI tool_calls → Anthropic tool_use blocks
     const toolCalls = parsed.choices?.[0]?.message?.tool_calls;
     if (toolCalls && Array.isArray(toolCalls)) {
+      const usedNames: string[] = [];
       for (const tc of toolCalls) {
         const tcFn = tc.function || {};
         let input = {};
         try { input = typeof tcFn.arguments === "string" ? JSON.parse(tcFn.arguments) : (tcFn.arguments || {}); } catch { input = {}; }
-        contentBlocks.push({ type: "tool_use", id: tc.id || `toolu_${Date.now()}`, name: tcFn.name || "", input });
+        const name = tcFn.name || "";
+        usedNames.push(name);
+        contentBlocks.push({ type: "tool_use", id: tc.id || `toolu_${Date.now()}`, name, input });
       }
+      // Self-evolving tool selector: learn which tools are used for this intent
+      recordToolUsage(intentTag, usedNames);
     }
     const stopReason = parsed.choices?.[0]?.finish_reason;
     return Response.json({
