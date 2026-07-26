@@ -98,15 +98,15 @@ export async function POST(req: NextRequest) {
   }
   const isStreaming = body.stream === true;
 
-  // ── Smart tool selection — AI-native, self-evolving ──
-  // Don't blindly truncate. Match user intent to tool descriptions, keep only relevant ones.
+  // ── AI-Native tool selection: classify intent first, then select tools ──
   const userMessages = (body.messages || []).filter((m: any) => m.role === "user");
   const lastUserMsg = userMessages.length > 0
     ? (typeof userMessages[userMessages.length - 1].content === "string"
         ? userMessages[userMessages.length - 1].content
         : (userMessages[userMessages.length - 1].content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n"))
     : "";
-  body.tools = (await selectTools(body.tools, lastUserMsg, body.messages || [], undefined)) || body.tools;
+  const earlyIntent = (await classifyPrompt(lastUserMsg, null))?.intent;
+  body.tools = (await selectTools(body.tools, lastUserMsg, body.messages || [], earlyIntent)) || body.tools;
   // Trim massive system prompt (Claude Code sends 100KB+ of MCP instructions)
   const MAX_SYSTEM_CHARS = 50000;
   if (typeof body.system === "string" && body.system.length > MAX_SYSTEM_CHARS) {
