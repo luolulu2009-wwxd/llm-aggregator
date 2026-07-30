@@ -43,7 +43,7 @@ export async function uploadProviderKey(input: {
       keyEncrypted,
       keyHash,
       dailyLimit: input.dailyLimit,
-      status: "pending",
+      status: "active", // Auto-activate: health check will pause if key is dead
     },
   });
 }

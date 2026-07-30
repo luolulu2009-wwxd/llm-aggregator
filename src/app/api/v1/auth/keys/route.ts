@@ -3,15 +3,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma";
 import { createHash, randomBytes } from "crypto";
+import { validateApiKey } from "@/lib/auth";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.KEY_ENCRYPTION_SECRET || "dev-secret-change-in-production-00000000000000000000000000000000"
 );
 
 async function getUserId(req: NextRequest): Promise<string | null> {
+  // Try cookie JWT first
   const token = req.cookies.get("auth_token")?.value;
-  if (!token) return null;
-  try { const r = await jwtVerify(token, JWT_SECRET); return r.payload.userId as string; } catch { return null; }
+  if (token) {
+    try { const r = await jwtVerify(token, JWT_SECRET); return r.payload.userId as string; } catch {}
+  }
+  // Fallback: Bearer token (API key)
+  const auth = await validateApiKey(req.headers.get("authorization"));
+  if (auth) return auth.userId;
+  return null;
 }
 
 // GET — list keys (partial info, never full key)
