@@ -33,8 +33,10 @@ const orBuild = openRouterAdapter.buildRequest;
 openRouterAdapter.buildRequest = (req, apiKey) => {
   const modelMap: Record<string, string> = {
     "claude-sonnet-5": "anthropic/claude-sonnet-5",
-    "claude-opus-4-8": "anthropic/claude-opus-4-8",
-    "claude-haiku-4-5": "anthropic/claude-haiku-4-5",
+    "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
+    "claude-opus-4-8": "anthropic/claude-opus-4.8",
+    "claude-haiku-4-5": "anthropic/claude-haiku-4.5",
+    "claude-haiku-4-5-20251001": "anthropic/claude-haiku-4.5",
     "claude-fable-5": "anthropic/claude-fable-5",
     "gpt-5": "openai/gpt-5",
     "gpt-4o": "openai/gpt-4o",
