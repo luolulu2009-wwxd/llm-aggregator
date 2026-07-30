@@ -2,8 +2,7 @@
 const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
-  // Claude Code sends 10MB+ bodies (MCP tool definitions + large system prompts)
-  maxBodySize: "50mb",
+  // Body size limit — Next.js 15 doesn't have maxBodySize in config
 
   // Anthropic API compatible paths for Claude Code
   async rewrites() {

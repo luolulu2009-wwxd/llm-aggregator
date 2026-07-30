@@ -528,7 +528,7 @@ export async function POST(req: NextRequest) {
           headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive", ...routeHeaders },
         });
       }
-      return streamAnthropicSSE(resp, auth, selectedKey, effectiveModel, provider, routeReason, openaiMessages);
+      return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers: resp.headers });
     }
 
     const data = await resp.json();
