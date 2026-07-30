@@ -1,18 +1,30 @@
 export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { validateApiKey } from "@/lib/auth";
+import { jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma";
+
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.KEY_ENCRYPTION_SECRET || "dev-secret-change-in-production-00000000000000000000000000000000"
+);
+
+async function getUserId(req: NextRequest): Promise<string | null> {
+  const auth = await validateApiKey(req.headers.get("authorization"));
+  if (auth) return auth.userId;
+  const token = req.cookies.get("auth_token")?.value;
+  if (token) { try { const { payload } = await jwtVerify(token, JWT_SECRET); return payload.userId as string; } catch {} }
+  return null;
+}
 
 // GET — 列出提现申请（待处理 + 最近已完成）
 export async function GET(req: NextRequest) {
-  const auth = await validateApiKey(req.headers.get("authorization"));
-  if (!auth) {
-    return Response.json({ error: { message: "Unauthorized" } }, { status: 401 });
+  const userId = await getUserId(req);
+  if (!userId) {
+    return Response.json({ error: { message: "请先登录" } }, { status: 401 });
   }
 
-  // Admin check: trust L2+ or userId matches ADMIN_USER_ID env var
   const user = await prisma.user.findUnique({
-    where: { id: auth.userId },
+    where: { id: userId },
     select: { trustLevel: true, id: true },
   });
   const isAdmin =

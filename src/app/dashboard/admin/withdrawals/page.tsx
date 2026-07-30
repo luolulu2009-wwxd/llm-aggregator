@@ -25,11 +25,10 @@ export default function WithdrawalsAdmin() {
 
   async function fetchWithdrawals() {
     setLoading(true);
+    setError("");
     try {
-      const res = await fetch("/api/v1/admin/withdrawals", {
-        headers: { Authorization: `Bearer ${localStorage.getItem("api_key") || ""}` },
-      });
-      if (!res.ok) { setError(await res.text()); return; }
+      const res = await fetch("/api/v1/admin/withdrawals");
+      if (!res.ok) { setError(await res.json().then(d => d.error?.message).catch(() => "请先登录")); return; }
       const json = await res.json();
       setWithdrawals(json.data);
       setPending(json.pending);
@@ -44,7 +43,7 @@ export default function WithdrawalsAdmin() {
     const txHash = action === "approve" ? prompt("转账 TxHash（可选，留空跳过）:") : null;
     const res = await fetch(`/api/v1/admin/withdrawals/${id}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("api_key") || ""}` },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, txHash: txHash || undefined }),
     });
     const data = await res.json();
@@ -75,7 +74,7 @@ export default function WithdrawalsAdmin() {
       {error && (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-4 text-sm text-red-700 dark:text-red-400">
           {error}
-          <p className="text-xs mt-1">提示: 在 Dashboard 页面设置 API Key 后自动读取</p>
+          {error.includes("登录") && <p className="text-xs mt-1">请先 <a href="/login" className="underline">登录</a></p>}
         </div>
       )}
 
