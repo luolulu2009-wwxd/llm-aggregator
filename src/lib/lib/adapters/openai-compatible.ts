@@ -36,7 +36,6 @@ export function createOpenAICompatibleAdapter(
           stream: req.stream ?? false,
           ...(req.tools ? { tools: req.tools } : {}),
           ...(req.tool_choice ? { tool_choice: req.tool_choice } : {}),
-          ...(req.thinking ? { thinking: req.thinking } : {}),
         },
         dispatcher,
       };

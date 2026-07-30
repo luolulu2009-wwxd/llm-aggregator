@@ -13,9 +13,6 @@ import { classifyPrompt, DEFAULT_MODEL } from "@/lib/router";
 import { classifyComplexity, costSavings } from "@/lib/classifier";
 import { rankCandidates } from "@/lib/weights";
 import { recordSuccess, recordFailure, loadFromRedis } from "@/lib/metrics";
-import { selectTools, recordToolUsage } from "@/lib/tool-selector";
-import { observeToolUsage } from "@/lib/agent/tool-agent";
-import { startAgents } from "@/lib/agent/scheduler";
 
 // Load persisted metrics on first request
 let metricsLoaded = false;
@@ -57,7 +54,6 @@ function mapModel(anthropicModel: string | undefined): string {
 export async function POST(req: NextRequest) {
   if (!redisReady) { await getRedis(); redisReady = true; }
   if (!metricsLoaded) { loadFromRedis().then(() => { metricsLoaded = true; }).catch(() => {}); }
-  startAgents(); // 🤖 Endogenous AI agents — auto-evolve routing + tool pool
 
   // Auth — support aggregator keys (sk-), OAuth (sk-ant-), and passthrough (non-sk- keys)
   const rawKey = req.headers.get("x-api-key") || req.headers.get("authorization")?.replace(/^Bearer /, "") || null;
@@ -93,28 +89,8 @@ export async function POST(req: NextRequest) {
     return Response.json({ type: "error", error: { type: "authentication_error", message: "Invalid API key. Get one at llm.saylulu.com/register" } }, { status: 401 });
   }
 
-  // Use raw text parsing to bypass Next.js body size limit (Claude Code sends 10MB+)
-  const bodyText = await req.text();
-  let body: any;
-  try { body = JSON.parse(bodyText); } catch {
-    return Response.json({ type: "error", error: { type: "invalid_request_error", message: "Invalid JSON" } }, { status: 400 });
-  }
+  const body = await req.json();
   const isStreaming = body.stream === true;
-
-  // ── AI-Native tool selection: classify intent first, then select tools ──
-  const userMessages = (body.messages || []).filter((m: any) => m.role === "user");
-  const lastUserMsg = userMessages.length > 0
-    ? (typeof userMessages[userMessages.length - 1].content === "string"
-        ? userMessages[userMessages.length - 1].content
-        : (userMessages[userMessages.length - 1].content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n"))
-    : "";
-  const earlyIntent = (await classifyPrompt(lastUserMsg, null))?.intent;
-  body.tools = (await selectTools(body.tools, lastUserMsg, body.messages || [], earlyIntent)) || body.tools;
-  // Trim massive system prompt (Claude Code sends 100KB+ of MCP instructions)
-  const MAX_SYSTEM_CHARS = 50000;
-  if (typeof body.system === "string" && body.system.length > MAX_SYSTEM_CHARS) {
-    body.system = body.system.slice(0, MAX_SYSTEM_CHARS) + "\n\n[system prompt trimmed — original: " + body.system.length + " chars]";
-  }
 
   // Convert Anthropic tools → OpenAI tools format
   // Anthropic: {name, description, input_schema}
@@ -219,10 +195,8 @@ export async function POST(req: NextRequest) {
   const rateLimitReset = rateCheck.resetInSeconds?.toString();
 
   // --- Balance pre-check (skip for passthrough) ---
-  let currentBalance: number | undefined;
   if (!auth.isPassthrough) {
     const balanceCheck = await checkBalance(auth.userId);
-    currentBalance = balanceCheck.balance;
     if (!balanceCheck.sufficient) {
       return Response.json({
         type: "error",
@@ -230,7 +204,7 @@ export async function POST(req: NextRequest) {
           type: "insufficient_balance",
           message: `Insufficient credits. Balance: ¥${balanceCheck.balance.toFixed(4)}, minimum: ¥${balanceCheck.minimum.toFixed(4)}`,
         },
-      }, { status: 402, headers: { "X-Balance": balanceCheck.balance.toString(), "X-Balance-Warning": "low" } });
+      }, { status: 402, headers: { "X-Balance": balanceCheck.balance.toString() } });
     }
   }
 
@@ -486,10 +460,6 @@ export async function POST(req: NextRequest) {
     "X-Route-Reason": routeReason,
     "X-Effective-Model": effectiveModel,
   };
-  if (currentBalance !== undefined) {
-    routeHeaders["X-Balance"] = currentBalance.toFixed(4);
-    if (currentBalance < 1.0) routeHeaders["X-Balance-Warning"] = "low";
-  }
   if (rateLimitRemaining) {
     routeHeaders["X-RateLimit-Remaining"] = rateLimitRemaining;
     routeHeaders["X-RateLimit-Limit"] = rateLimitTotal!;
@@ -528,7 +498,7 @@ export async function POST(req: NextRequest) {
           headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive", ...routeHeaders },
         });
       }
-      return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers: resp.headers });
+      return streamAnthropicSSE(resp, auth, selectedKey, effectiveModel, provider, routeReason, openaiMessages);
     }
 
     const data = await resp.json();
@@ -586,18 +556,12 @@ export async function POST(req: NextRequest) {
     // Convert OpenAI tool_calls → Anthropic tool_use blocks
     const toolCalls = parsed.choices?.[0]?.message?.tool_calls;
     if (toolCalls && Array.isArray(toolCalls)) {
-      const usedNames: string[] = [];
       for (const tc of toolCalls) {
         const tcFn = tc.function || {};
         let input = {};
         try { input = typeof tcFn.arguments === "string" ? JSON.parse(tcFn.arguments) : (tcFn.arguments || {}); } catch { input = {}; }
-        const name = tcFn.name || "";
-        usedNames.push(name);
-        contentBlocks.push({ type: "tool_use", id: tc.id || `toolu_${Date.now()}`, name, input });
+        contentBlocks.push({ type: "tool_use", id: tc.id || `toolu_${Date.now()}`, name: tcFn.name || "", input });
       }
-      // Self-evolving: tool selector learning + agent observation
-      recordToolUsage(intentTag, usedNames);
-      for (const n of usedNames) observeToolUsage(n, true);
     }
     const stopReason = parsed.choices?.[0]?.finish_reason;
     return Response.json({

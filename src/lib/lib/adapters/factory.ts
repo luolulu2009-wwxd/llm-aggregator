@@ -23,20 +23,18 @@ register(createOpenAICompatibleAdapter("doubao", "https://ark.cn-beijing.volces.
 // ── Anthropic (native format + proxy) ──
 register(anthropicAdapter);
 
-// ── OpenRouter — via local HTTP proxy → autossh tunnel → BandwagonHost → OpenRouter ──
-const OR_PROXY_URL = process.env.OPENROUTER_PROXY
-  ? `${process.env.OPENROUTER_PROXY}/api/v1`
-  : "http://127.0.0.1:3001/api/v1";
+// ── OpenRouter via local HTTP proxy → SSH tunnel → BandwagonHost → OpenRouter ──
+// Proxy: node /root/or-proxy.js listens on :3001, forwards HTTP→HTTPS through SSH tunnel
+const OR_PROXY = process.env.OPENROUTER_PROXY || "";  // http://127.0.0.1:3001
+const orBaseUrl = OR_PROXY ? `${OR_PROXY}/api/v1` : "https://openrouter.ai/api/v1";
 
-const openRouterAdapter = createOpenAICompatibleAdapter("openrouter", OR_PROXY_URL, "anthropic/claude-sonnet-5");
+const openRouterAdapter = createOpenAICompatibleAdapter("openrouter", orBaseUrl, "anthropic/claude-sonnet-5");
 const orBuild = openRouterAdapter.buildRequest;
 openRouterAdapter.buildRequest = (req, apiKey) => {
   const modelMap: Record<string, string> = {
     "claude-sonnet-5": "anthropic/claude-sonnet-5",
-    "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
-    "claude-opus-4-8": "anthropic/claude-opus-4.8",
-    "claude-haiku-4-5": "anthropic/claude-haiku-4.5",
-    "claude-haiku-4-5-20251001": "anthropic/claude-haiku-4.5",
+    "claude-opus-4-8": "anthropic/claude-opus-4-8",
+    "claude-haiku-4-5": "anthropic/claude-haiku-4-5",
     "claude-fable-5": "anthropic/claude-fable-5",
     "gpt-5": "openai/gpt-5",
     "gpt-4o": "openai/gpt-4o",

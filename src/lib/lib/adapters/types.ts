@@ -9,7 +9,6 @@ export interface StandardRequest {
   stream?: boolean;
   tools?: any[];        // Anthropic/OpenAI tool definitions
   tool_choice?: any;    // Anthropic tool_choice or OpenAI tool_choice
-  thinking?: any;       // Anthropic extended thinking config
 }
 
 /** OpenAI-compatible response (our internal standard format) */
