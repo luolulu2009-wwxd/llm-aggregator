@@ -10,7 +10,7 @@ import { checkContent } from "@/lib/safety";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { evaluateTrustLevel } from "@/lib/trust";
 import { getRedis } from "@/lib/redis";
-import { recordUsage } from "@/lib/billing";
+import { recordUsage, checkBalance } from "@/lib/billing";
 import { detectSelfDealing, checkEarningsAnomaly } from "@/lib/abuse";
 import { retrieveMemory, injectMemoryIntoMessages, saveMessages, createMemoryFragments, createConversation } from "@/lib/memory";
 import { getQueryEmbedding } from "@/lib/embedding";
@@ -52,6 +52,27 @@ export async function POST(req: NextRequest) {
     return Response.json(
       { error: { message: rateCheck.reason, type: "rate_limit_exceeded", code: 429 } },
       { status: 429 },
+    );
+  }
+
+  // --- Balance Check ---
+  const balanceCheck = await checkBalance(auth.userId);
+  if (!balanceCheck.sufficient) {
+    return Response.json(
+      {
+        error: {
+          message: `余额不足：当前 ¥${balanceCheck.balance.toFixed(4)}，最低需 ¥${balanceCheck.minimum.toFixed(4)}。请在 ${process.env.NEXT_PUBLIC_APP_URL || "https://llm.saylulu.com"}/topup 充值`,
+          type: "insufficient_balance",
+          code: 402,
+        },
+      },
+      {
+        status: 402,
+        headers: {
+          "X-Balance": balanceCheck.balance.toString(),
+          "X-Balance-Warning": "low",
+        },
+      },
     );
   }
 

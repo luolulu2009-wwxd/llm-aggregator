@@ -13,6 +13,7 @@ model User {
   email          String    @unique
   passwordHash   String?   // null = OAuth only
   name           String?
+  tronAddress    String?   // bound TRON wallet for auto-topup
   trustLevel     String    @default("L0") // L0 | L1 | L2 | L3
   creditBalance  Decimal   @default(0) @db.Decimal(20, 8)
   createdAt      DateTime  @default(now())
